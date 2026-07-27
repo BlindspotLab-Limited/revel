@@ -66,6 +66,28 @@ npm run dev                # http://localhost:3000
 
 Configure Google OAuth and set `AUTH_SECRET` / `NEXTAUTH_*` / `GOOGLE_*` in `.env.local`.
 
+### OKX x402 billing
+
+The app already wires OKX x402 billing for the paid MCP and audit endpoints. If you want marketplace/API access, add the same values from `.env.example` (or the Vercel template in `.env.vercel`) for:
+
+- `OKX_API_KEY`
+- `OKX_SECRET_KEY`
+- `OKX_PASSPHRASE`
+- `OKX_PAY_TO`
+- `OKX_AUDIT_PRICE_USD`
+
+You can verify the official SDK wiring with:
+
+```bash
+npm run verify:okx-billing
+```
+
+You can also check the runtime health endpoint:
+
+```bash
+curl http://localhost:3000/api/health
+```
+
 ### Key scripts
 
 | Command | Purpose |

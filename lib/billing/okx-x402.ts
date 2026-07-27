@@ -62,6 +62,62 @@ export function getOkxBillingManifest() {
   };
 }
 
+export type OkxBillingHealthStatus = {
+  enabled: boolean;
+  configured: boolean;
+  status: "healthy" | "disabled" | "misconfigured" | "error";
+  priceUsd: number;
+  priceDisplay: string;
+  payTo?: string;
+  network: string;
+  endpoint: string;
+  alternateEndpoint: string;
+  note: string;
+  error?: string;
+};
+
+export function getOkxBillingHealthSnapshot(): OkxBillingHealthStatus {
+  const hasApiKey = Boolean(process.env.OKX_API_KEY?.trim());
+  const hasSecretKey = Boolean(process.env.OKX_SECRET_KEY?.trim());
+  const hasPassphrase = Boolean(process.env.OKX_PASSPHRASE?.trim());
+  const hasPayTo = Boolean(process.env.OKX_PAY_TO?.trim());
+  const configured = hasApiKey || hasSecretKey || hasPassphrase || hasPayTo;
+  const enabled = hasApiKey && hasSecretKey && hasPassphrase && hasPayTo;
+  const manifest = getOkxBillingManifest();
+
+  return {
+    enabled,
+    configured,
+    status: enabled ? "healthy" : configured ? "misconfigured" : "disabled",
+    priceUsd: manifest.priceUsd,
+    priceDisplay: manifest.priceDisplay,
+    payTo: getOkxPayTo(),
+    network: manifest.network,
+    endpoint: manifest.endpoint,
+    alternateEndpoint: manifest.alternateEndpoint,
+    note: manifest.note,
+  };
+}
+
+export async function getOkxBillingHealth(): Promise<OkxBillingHealthStatus> {
+  const snapshot = getOkxBillingHealthSnapshot();
+
+  if (!snapshot.enabled) {
+    return snapshot;
+  }
+
+  try {
+    await ensureOkxResourceServerReady();
+    return snapshot;
+  } catch (error) {
+    return {
+      ...snapshot,
+      status: "error",
+      error: error instanceof Error ? error.message : "Unknown OKX billing error",
+    };
+  }
+}
+
 /**
  * @deprecated Do not pass to withX402 for API/MCP routes.
  * Browser HTML paywalls omit PAYMENT-REQUIRED and fail OKX marketplace x402 validation.
