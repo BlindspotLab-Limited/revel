@@ -1,9 +1,9 @@
-import { OKXFacilitatorClient } from "@okxweb3/x402-core/facilitator";
+import { OKXFacilitatorClient } from "@okxweb3/app-x402-core";
 import {
   x402ResourceServer,
   type RouteConfig,
-} from "@okxweb3/x402-core/server";
-import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
+} from "@okxweb3/app-x402-core/server";
+import { ExactEvmScheme } from "@okxweb3/app-x402-evm/exact/server";
 import { siteConfig } from "@/lib/site-config";
 
 /** X Layer mainnet — OKX Onchain OS payments */

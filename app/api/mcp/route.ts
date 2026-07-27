@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { withX402 } from "@okxweb3/x402-next";
+import { withX402 } from "@okxweb3/app-x402-next";
 import {
   ensureOkxResourceServerReady,
   getMcpRouteConfig,
