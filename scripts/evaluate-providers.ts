@@ -56,7 +56,12 @@ interface Result {
   observed?: number;
   inferred?: number;
   verifiedQuotes?: number;
+  /** Long enough to check, and absent from every fetched page: fabricated. */
   unverifiedQuotes?: number;
+  /** Too short to match meaningfully; downgraded to inferred, not a breach. */
+  tooShortQuotes?: number;
+  /** Any evidence row still claiming "measured" without verification. */
+  unearnedMeasured?: number;
   visualClaims?: number;
   pagesFetched?: number;
   pagesFailed?: number;
@@ -85,17 +90,30 @@ async function evaluate(
     let inferred = 0;
     let verifiedQuotes = 0;
     let unverifiedQuotes = 0;
+    let tooShortQuotes = 0;
     let visualClaims = 0;
+
+    let unearnedMeasured = 0;
 
     for (const finding of report.blindspots) {
       for (const item of finding.evidence ?? []) {
-        if (item.basis === "measured") measured++;
-        else if (item.basis === "observed") observed++;
+        if (item.basis === "measured") {
+          measured++;
+          // "measured" must be earned by a verified quote, never asserted.
+          if (!item.quote || store.verifyQuote(item.quote) !== "verified") {
+            unearnedMeasured++;
+          }
+        } else if (item.basis === "observed") observed++;
         else inferred++;
 
         if (item.quote) {
-          if (store.containsQuote(item.quote)) verifiedQuotes++;
-          else unverifiedQuotes++;
+          // Distinguish "fabricated" from "too short to check". Only the
+          // former is an integrity failure; conflating them made the gate
+          // report a breach that was really a measurement artefact.
+          const verdict = store.verifyQuote(item.quote);
+          if (verdict === "verified") verifiedQuotes++;
+          else if (verdict === "not_found") unverifiedQuotes++;
+          else tooShortQuotes++;
         }
       }
       visualClaims += findVisualClaims({
@@ -116,6 +134,8 @@ async function evaluate(
       inferred,
       verifiedQuotes,
       unverifiedQuotes,
+      tooShortQuotes,
+      unearnedMeasured,
       visualClaims,
       pagesFetched: coverage.pagesFetched,
       pagesFailed: coverage.pagesFailed,
@@ -180,19 +200,30 @@ async function main() {
       findings: r.findings ?? "",
       measured: r.measured ?? "",
       inferred: r.inferred ?? "",
-      badQuotes: r.unverifiedQuotes ?? "",
+      fabricated: r.unverifiedQuotes ?? "",
+      shortQuotes: r.tooShortQuotes ?? "",
+      unearnedMeasured: r.unearnedMeasured ?? "",
       visual: r.visualClaims ?? "",
       pages: r.ok ? `${r.pagesFetched}/${(r.pagesFetched ?? 0) + (r.pagesFailed ?? 0)}` : "",
       schema: r.schemaVersion ?? "",
     }))
   );
 
-  const badQuotes = results.reduce((n, r) => n + (r.unverifiedQuotes ?? 0), 0);
-  const visual = results.reduce((n, r) => n + (r.visualClaims ?? 0), 0);
-  console.log(
-    `\nIntegrity gates — unverified quotes in accepted reports: ${badQuotes} (must be 0); visual claims: ${visual} (must be 0)`
-  );
-  process.exit(badQuotes === 0 && visual === 0 ? 0 : 1);
+  const sum = (pick: (r: Result) => number | undefined) =>
+    results.reduce((n, r) => n + (pick(r) ?? 0), 0);
+
+  const fabricated = sum((r) => r.unverifiedQuotes);
+  const unearned = sum((r) => r.unearnedMeasured);
+  const short = sum((r) => r.tooShortQuotes);
+  const visual = sum((r) => r.visualClaims);
+
+  console.log("\nIntegrity gates (all must be 0):");
+  console.log(`  fabricated quotes in accepted reports     : ${fabricated}`);
+  console.log(`  evidence labelled "measured" unverified   : ${unearned}`);
+  console.log(`  visual claims without rendered evidence   : ${visual}`);
+  console.log(`  [informational] quotes too short to verify: ${short}`);
+
+  process.exit(fabricated === 0 && unearned === 0 && visual === 0 ? 0 : 1);
 }
 
 void main();

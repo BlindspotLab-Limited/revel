@@ -211,9 +211,7 @@ export function validateReportEvidence(
     ];
 
     const unverified = claimedQuotes.filter(
-      (quote) =>
-        quote.trim().length >= MIN_VERIFIABLE_QUOTE_LENGTH &&
-        !store.containsQuote(quote)
+      (quote) => store.verifyQuote(quote) === "not_found"
     );
 
     if (unverified.length > 0) {
@@ -230,11 +228,11 @@ export function validateReportEvidence(
     }
 
     const shortQuotes = claimedQuotes.filter(
-      (quote) => quote.trim().length < MIN_VERIFIABLE_QUOTE_LENGTH
+      (quote) => store.verifyQuote(quote) === "too_short"
     );
     if (shortQuotes.length > 0) {
       warnings.push(
-        `Blindspot "${finding.id}" contains quotes too short to verify (<${MIN_VERIFIABLE_QUOTE_LENGTH} chars); treated as unverified.`
+        `Blindspot "${finding.id}" contains quotes too short to verify (under ${MIN_VERIFIABLE_QUOTE_LENGTH} characters); recorded as inferred, not measured.`
       );
     }
 
@@ -280,14 +278,35 @@ export function ensureFindingEvidence(
   store: AuditEvidenceStore
 ): FindingEvidence[] {
   if (finding.evidence && finding.evidence.length > 0) {
-    return finding.evidence.map((item) => ({
-      ...item,
-      // A quote that verifies is measured; one that does not stays inferred.
-      basis:
-        item.quote && store.containsQuote(item.quote)
-          ? "measured"
-          : item.basis,
-    }));
+    return finding.evidence.map((item) => {
+      // "measured" is a claim about OUR verification, never the model's
+      // self-assessment. It is earned only by a quote we confirmed against
+      // fetched text; anything else is downgraded and the reason recorded.
+      if (!item.quote) {
+        return {
+          ...item,
+          basis: item.basis === "measured" ? "inferred" : item.basis,
+          ...(item.basis === "measured"
+            ? { note: "Claimed as measured but carried no quote to verify." }
+            : {}),
+        } satisfies FindingEvidence;
+      }
+
+      const verdict = store.verifyQuote(item.quote);
+
+      if (verdict === "verified") {
+        return { ...item, basis: "measured" } satisfies FindingEvidence;
+      }
+
+      return {
+        ...item,
+        basis: "inferred",
+        note:
+          verdict === "too_short"
+            ? `Quote too short to verify (under ${MIN_VERIFIABLE_QUOTE_LENGTH} characters); not verified against fetched pages.`
+            : "Quote was not verified against fetched pages.",
+      } satisfies FindingEvidence;
+    });
   }
 
   const quotes = extractClaimedQuotes(finding.description).filter((quote) =>

@@ -127,9 +127,25 @@ export class AuditEvidenceStore {
 
   /** Substring check against all successfully fetched text. */
   containsQuote(quote: string): boolean {
+    return this.verifyQuote(quote) === "verified";
+  }
+
+  /**
+   * Why a quote did or did not verify.
+   *
+   * `containsQuote` collapses "too short to check" and "not on the page" into
+   * a single false, which hid a real defect: a short quote skipped rejection
+   * *and* skipped promotion, so the model's own `basis` survived unchallenged
+   * and an unverifiable string could ship labelled "measured".
+   *
+   * - verified   : found in text we actually fetched
+   * - too_short  : below the length at which a substring match means anything
+   * - not_found  : long enough to check, and absent — i.e. fabricated
+   */
+  verifyQuote(quote: string): "verified" | "too_short" | "not_found" {
     const needle = normalizeForMatch(quote);
-    if (needle.length < MIN_VERIFIABLE_QUOTE_LENGTH) return false;
-    return this.haystack.includes(needle);
+    if (needle.length < MIN_VERIFIABLE_QUOTE_LENGTH) return "too_short";
+    return this.haystack.includes(needle) ? "verified" : "not_found";
   }
 
   coverage(): CoverageSummary {
