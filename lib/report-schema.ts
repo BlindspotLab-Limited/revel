@@ -1,19 +1,38 @@
 import { z } from "zod";
-import type {
-  ActionTask,
-  AnalysisReport,
-  Blindspot,
-  BlueprintStep,
-  Category,
-  Impact,
-  Priority,
+import {
+  extractClaimedQuotes,
+  findVisualClaims,
+} from "@/lib/audit/claim-rules";
+import {
+  MIN_VERIFIABLE_QUOTE_LENGTH,
+  type AuditEvidenceStore,
+} from "@/lib/audit/evidence";
+import {
+  REPORT_SCHEMA_VERSION,
+  type ActionTask,
+  type AnalysisReport,
+  type Blindspot,
+  type BlueprintStep,
+  type Category,
+  type FindingEvidence,
+  type Impact,
+  type Priority,
 } from "@/types/analysis";
 
 const priority = z.enum(["critical", "high", "medium", "low"]);
 const category = z.enum(["product", "ux", "messaging", "competition"]);
 const impact = z.enum(["high", "medium", "low"]);
+const claimBasis = z.enum(["measured", "observed", "inferred"]);
+
+const findingEvidenceSchema = z.object({
+  basis: claimBasis,
+  quote: z.string().optional(),
+  sourceUrl: z.string().optional(),
+  note: z.string().optional(),
+});
 
 export const analysisReportSchema = z.object({
+  schemaVersion: z.number().optional(),
   score: z.number().min(0).max(100),
   summary: z.string().min(20),
   blindspots: z
@@ -25,9 +44,10 @@ export const analysisReportSchema = z.object({
         category,
         description: z.string(),
         suggestedFix: z.string(),
+        evidence: z.array(findingEvidenceSchema).optional(),
       })
     )
-    .min(4),
+    .min(1),
   blueprint: z
     .array(
       z.object({
@@ -39,7 +59,7 @@ export const analysisReportSchema = z.object({
         description: z.string(),
       })
     )
-    .min(3),
+    .min(1),
   actions: z
     .array(
       z.object({
@@ -51,61 +71,243 @@ export const analysisReportSchema = z.object({
         expectedOutcome: z.string(),
       })
     )
-    .min(5),
+    .min(1),
 });
 
-export const MIN_BLINDSPOTS = 4;
-export const MIN_BLUEPRINT_STEPS = 3;
-export const MIN_ACTIONS = 5;
+/**
+ * Minimums express "a report must say something", not a quota.
+ *
+ * These were 4 blindspots / 3 steps / 5 actions, combined with a hard
+ * "≥1 high or critical" and "≥2 categories" rule. On a genuinely good site
+ * that forced the model to invent filler and to escalate severity to pass
+ * validation. A site with one real problem may now report one real problem.
+ */
+export const MIN_BLINDSPOTS = 1;
+export const MIN_BLUEPRINT_STEPS = 1;
+export const MIN_ACTIONS = 1;
+
+/** Below this many findings the report must disclose that coverage was light. */
+export const SPARSE_FINDING_THRESHOLD = 3;
 
 /** Placeholder the normalizer used to inject — never treat as a real recommendation. */
 export const GENERIC_SUGGESTED_FIX =
   "Review this area and implement a concrete fix this week.";
 
 export function parseAnalysisReport(raw: unknown): AnalysisReport {
-  return analysisReportSchema.parse(raw);
+  return analysisReportSchema.parse(raw) as AnalysisReport;
 }
 
-/** True when the report has enough *substantive* findings (not bare titles / defaults). */
+/**
+ * Structural well-formedness: every finding carries real content.
+ *
+ * This deliberately says nothing about *how many* findings exist beyond
+ * "at least one", and nothing about severity mix. Evidence support is checked
+ * separately by `validateReportEvidence`, which needs the evidence store.
+ */
 export function isCompleteReport(report: AnalysisReport): boolean {
+  return reportQualityErrors(report).length === 0;
+}
+
+export function reportQualityErrors(report: AnalysisReport): string[] {
+  const errors: string[] = [];
+
   const qualityBlindspots = report.blindspots.filter(isSubstantiveBlindspot);
   const qualityBlueprint = report.blueprint.filter(isSubstantiveBlueprint);
   const qualityActions = report.actions.filter(isSubstantiveAction);
-  const categories = new Set(qualityBlindspots.map((b) => b.category));
-  const hasPrioritySpread = qualityBlindspots.some(
-    (b) => b.priority === "critical" || b.priority === "high"
-  );
 
-  return (
-    qualityBlindspots.length >= MIN_BLINDSPOTS &&
-    qualityBlueprint.length >= MIN_BLUEPRINT_STEPS &&
-    qualityActions.length >= MIN_ACTIONS &&
-    report.summary.trim().length >= 60 &&
-    categories.size >= 2 &&
-    hasPrioritySpread
-  );
+  if (qualityBlindspots.length < MIN_BLINDSPOTS) {
+    errors.push(
+      `Need ≥${MIN_BLINDSPOTS} substantive blindspot (unique description ≥50 chars + specific suggestedFix ≥30 chars). Got ${qualityBlindspots.length} of ${report.blindspots.length} submitted.`
+    );
+  }
+  if (qualityBlueprint.length < MIN_BLUEPRINT_STEPS) {
+    errors.push(
+      `Need ≥${MIN_BLUEPRINT_STEPS} substantive blueprint step. Got ${qualityBlueprint.length}.`
+    );
+  }
+  if (qualityActions.length < MIN_ACTIONS) {
+    errors.push(
+      `Need ≥${MIN_ACTIONS} substantive action. Got ${qualityActions.length}.`
+    );
+  }
+  if (report.summary.trim().length < 60) {
+    errors.push(
+      `Summary must be ≥60 chars and name the product/domain. Got ${report.summary.trim().length}.`
+    );
+  }
+
+  return errors;
 }
 
 export function reportCompletenessError(report: AnalysisReport): string {
-  const qualityBlindspots = report.blindspots.filter(isSubstantiveBlindspot);
-  const qualityBlueprint = report.blueprint.filter(isSubstantiveBlueprint);
-  const qualityActions = report.actions.filter(isSubstantiveAction);
-  const categories = new Set(qualityBlindspots.map((b) => b.category)).size;
-  const highCount = qualityBlindspots.filter(
-    (b) => b.priority === "critical" || b.priority === "high"
-  ).length;
+  const errors = reportQualityErrors(report);
+  if (errors.length === 0) return "";
 
   return [
-    `Incomplete or generic audit JSON.`,
-    `Need ≥${MIN_BLINDSPOTS} substantive blindspots (unique description + specific suggestedFix, not title-only),`,
-    `≥${MIN_BLUEPRINT_STEPS} blueprint steps, ≥${MIN_ACTIONS} actions,`,
-    `≥2 categories, and ≥1 high/critical priority.`,
-    `Got quality blindspots=${qualityBlindspots.length} (raw ${report.blindspots.length}),`,
-    `blueprint=${qualityBlueprint.length}, actions=${qualityActions.length},`,
-    `categories=${categories}, high/critical=${highCount}.`,
-    `Each blindspot must include: why it matters (quote page text), what happens if ignored, and a concrete fix.`,
+    "Incomplete audit JSON.",
+    ...errors,
+    `Each blindspot must state why it matters, what happens if ignored, and a concrete fix.`,
+    `Report only problems you actually found — do not pad to a count and do not inflate severity.`,
     `Do NOT use placeholder fixes like "${GENERIC_SUGGESTED_FIX}". Resubmit full report_json.`,
   ].join(" ");
+}
+
+export interface EvidenceValidationResult {
+  ok: boolean;
+  /** Blocking problems — report must be resubmitted. */
+  errors: string[];
+  /** Findings removed because they were unsupported. */
+  droppedFindingIds: string[];
+  /** Non-blocking notes surfaced in report limitations. */
+  warnings: string[];
+}
+
+/**
+ * Validate every finding against the evidence actually collected.
+ *
+ * Three independent gates:
+ *  1. Quoted text must appear in a page we fetched. A fabricated quote is the
+ *     single most damaging failure mode for an audit product.
+ *  2. Visual/rendered claims are inadmissible — extraction is text-only.
+ *  3. A finding may not assert absence for a URL whose fetch failed.
+ */
+export function validateReportEvidence(
+  report: AnalysisReport,
+  store: AuditEvidenceStore
+): EvidenceValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const droppedFindingIds: string[] = [];
+
+  const failedUrls = store.failed().map((page) => page.url);
+
+  for (const finding of report.blindspots) {
+    const fields = {
+      title: finding.title,
+      description: finding.description,
+      suggestedFix: finding.suggestedFix,
+    };
+
+    // --- Gate 2: visual claims without a renderer ---
+    const visualHits = findVisualClaims(fields);
+    if (visualHits.length > 0) {
+      droppedFindingIds.push(finding.id);
+      errors.push(
+        `Blindspot "${finding.id}" asserts a visual/rendered property (${[
+          ...new Set(visualHits.map((hit) => hit.rule)),
+        ].join(
+          ", "
+        )}) but Revel collected no rendered evidence. Remove the finding or restate it as a text-based fact.`
+      );
+      continue;
+    }
+
+    // --- Gate 1: quoted text must exist in collected evidence ---
+    const claimedQuotes = [
+      ...extractClaimedQuotes(finding.description),
+      ...(finding.evidence ?? [])
+        .map((item) => item.quote)
+        .filter((quote): quote is string => Boolean(quote)),
+    ];
+
+    const unverified = claimedQuotes.filter(
+      (quote) =>
+        quote.trim().length >= MIN_VERIFIABLE_QUOTE_LENGTH &&
+        !store.containsQuote(quote)
+    );
+
+    if (unverified.length > 0) {
+      droppedFindingIds.push(finding.id);
+      errors.push(
+        `Blindspot "${finding.id}" quotes text that does not appear on any fetched page: ${unverified
+          .slice(0, 2)
+          .map((quote) => `"${quote.slice(0, 60)}"`)
+          .join(
+            ", "
+          )}. Quote the page verbatim or drop the quotation marks.`
+      );
+      continue;
+    }
+
+    const shortQuotes = claimedQuotes.filter(
+      (quote) => quote.trim().length < MIN_VERIFIABLE_QUOTE_LENGTH
+    );
+    if (shortQuotes.length > 0) {
+      warnings.push(
+        `Blindspot "${finding.id}" contains quotes too short to verify (<${MIN_VERIFIABLE_QUOTE_LENGTH} chars); treated as unverified.`
+      );
+    }
+
+    // --- Gate 3: absence claims about pages that never loaded ---
+    const citedFailedUrl = failedUrls.find((url) =>
+      [finding.description, finding.suggestedFix, ...(finding.evidence ?? []).map((e) => e.sourceUrl ?? "")].some(
+        (text) => text?.includes(url)
+      )
+    );
+    if (citedFailedUrl && /\b(no|missing|absent|lacks?|without|does not have)\b/i.test(finding.description)) {
+      droppedFindingIds.push(finding.id);
+      errors.push(
+        `Blindspot "${finding.id}" claims something is missing but cites ${citedFailedUrl}, which failed to fetch. A failed fetch is not evidence of absence.`
+      );
+      continue;
+    }
+
+    // Evidence metadata is required for new submissions.
+    if (!finding.evidence || finding.evidence.length === 0) {
+      warnings.push(
+        `Blindspot "${finding.id}" has no evidence metadata; basis recorded as inferred.`
+      );
+    }
+  }
+
+  if (!store.hasUsableEvidence()) {
+    errors.push(
+      "No page content was retrieved for this audit. A report cannot be produced from the domain name alone."
+    );
+  }
+
+  return {
+    ok: errors.length === 0,
+    errors,
+    droppedFindingIds,
+    warnings,
+  };
+}
+
+/** Default basis when the model omitted evidence metadata. */
+export function ensureFindingEvidence(
+  finding: Blindspot,
+  store: AuditEvidenceStore
+): FindingEvidence[] {
+  if (finding.evidence && finding.evidence.length > 0) {
+    return finding.evidence.map((item) => ({
+      ...item,
+      // A quote that verifies is measured; one that does not stays inferred.
+      basis:
+        item.quote && store.containsQuote(item.quote)
+          ? "measured"
+          : item.basis,
+    }));
+  }
+
+  const quotes = extractClaimedQuotes(finding.description).filter((quote) =>
+    store.containsQuote(quote)
+  );
+
+  if (quotes.length > 0) {
+    return quotes.map((quote) => ({
+      basis: "measured" as const,
+      quote,
+      sourceUrl: store.fetched()[0]?.url,
+    }));
+  }
+
+  return [
+    {
+      basis: "inferred" as const,
+      note: "No verifiable page quote attached to this finding.",
+    },
+  ];
 }
 
 function isSubstantiveBlindspot(item: Blindspot): boolean {
@@ -207,12 +409,28 @@ export function normalizeAnalysisReport(raw: unknown): AnalysisReport {
           ? source.executiveSummary.trim()
           : "Analysis completed. Review blindspots and the blueprint for prioritized next steps.";
 
+  const schemaVersion =
+    typeof source.schemaVersion === "number" ? source.schemaVersion : undefined;
+
   return {
+    ...(schemaVersion ? { schemaVersion } : {}),
     score,
     summary,
     blindspots,
     blueprint,
     actions,
+  };
+}
+
+/** Stamp the current schema version and coverage onto an accepted report. */
+export function finalizeReport(
+  report: AnalysisReport,
+  coverage: AnalysisReport["coverage"]
+): AnalysisReport {
+  return {
+    ...report,
+    schemaVersion: REPORT_SCHEMA_VERSION,
+    ...(coverage ? { coverage } : {}),
   };
 }
 
@@ -346,6 +564,36 @@ function normalizeImpact(value: unknown, fallback: Impact = "medium"): Impact {
   return fallback;
 }
 
+function normalizeClaimBasis(value: unknown): FindingEvidence["basis"] {
+  if (typeof value === "string") {
+    const v = value.toLowerCase().trim();
+    if (v === "measured" || v === "observed" || v === "inferred") return v;
+  }
+  return "inferred";
+}
+
+function normalizeEvidenceList(value: unknown): FindingEvidence[] | undefined {
+  const rows = asObjectArray(value);
+  if (rows.length === 0) return undefined;
+
+  const evidence = rows
+    .map((row) => {
+      const quote = pickString(row, ["quote", "text", "excerpt"], "");
+      const sourceUrl = pickString(row, ["sourceUrl", "source_url", "url"], "");
+      const note = pickString(row, ["note", "detail", "reason"], "");
+      if (!quote && !sourceUrl && !note) return null;
+      return {
+        basis: normalizeClaimBasis(row.basis ?? row.type ?? row.kind),
+        ...(quote ? { quote } : {}),
+        ...(sourceUrl ? { sourceUrl } : {}),
+        ...(note ? { note } : {}),
+      } satisfies FindingEvidence;
+    })
+    .filter((item): item is FindingEvidence => item !== null);
+
+  return evidence.length > 0 ? evidence : undefined;
+}
+
 function normalizeBlindspot(
   item: Record<string, unknown>,
   index: number
@@ -369,6 +617,10 @@ function normalizeBlindspot(
   if (description.toLowerCase() === title.toLowerCase()) return null;
   if (suggestedFix === GENERIC_SUGGESTED_FIX) return null;
 
+  const evidence = normalizeEvidenceList(
+    item.evidence ?? item.supporting_evidence ?? item.supportingEvidence
+  );
+
   return {
     id: pickString(item, ["id"], `bs-${index + 1}`),
     title,
@@ -376,6 +628,7 @@ function normalizeBlindspot(
     category: normalizeCategory(item.category),
     description,
     suggestedFix,
+    ...(evidence ? { evidence } : {}),
   };
 }
 

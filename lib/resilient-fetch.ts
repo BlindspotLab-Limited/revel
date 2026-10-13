@@ -64,6 +64,25 @@ export interface ResilientFetchOptions extends RequestInit {
   /** Validate URL and each redirect target against SSRF blocklist. */
   ssrfGuard?: boolean;
   maxRedirects?: number;
+  /** Per-attempt deadline. Aborts the request instead of hanging. */
+  timeoutMs?: number;
+  /** Outer deadline shared across attempts (total audit budget). */
+  deadlineSignal?: AbortSignal;
+}
+
+export class DeadlineExceededError extends Error {
+  constructor(context: string) {
+    super(`${context}: deadline exceeded`);
+    this.name = "DeadlineExceededError";
+  }
+}
+
+export function isDeadlineError(error: unknown): boolean {
+  return (
+    error instanceof DeadlineExceededError ||
+    (error instanceof Error &&
+      (error.name === "AbortError" || /deadline exceeded|aborted/i.test(error.message)))
+  );
 }
 
 async function fetchWithOptionalSsrGuard(
@@ -122,29 +141,80 @@ export async function resilientFetch(
     context = "HTTP request",
     ssrfGuard = false,
     maxRedirects = 5,
+    timeoutMs,
+    deadlineSignal,
     ...init
   } = options;
 
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
+    if (deadlineSignal?.aborted) {
+      throw new DeadlineExceededError(context);
+    }
+
+    // Per-attempt timeout, combined with any outer audit-budget signal.
+    const timeoutController = new AbortController();
+    const timer = timeoutMs
+      ? setTimeout(() => timeoutController.abort(), timeoutMs)
+      : undefined;
+    const signals = [
+      timeoutMs ? timeoutController.signal : undefined,
+      deadlineSignal,
+      init.signal ?? undefined,
+    ].filter((signal): signal is AbortSignal => Boolean(signal));
+
     try {
-      return await fetchWithOptionalSsrGuard(url, init, {
-        ssrfGuard,
-        maxRedirects,
-        context,
-      });
+      return await fetchWithOptionalSsrGuard(
+        url,
+        signals.length > 0 ? { ...init, signal: anySignal(signals) } : init,
+        { ssrfGuard, maxRedirects, context }
+      );
     } catch (error) {
       lastError = error;
-      if (attempt < retries && isNetworkFetchError(error)) {
+
+      // An outer deadline is terminal — retrying cannot help.
+      if (deadlineSignal?.aborted) {
+        throw new DeadlineExceededError(context);
+      }
+
+      const retryable =
+        isNetworkFetchError(error) ||
+        (timeoutMs !== undefined && timeoutController.signal.aborted);
+
+      if (attempt < retries && retryable) {
         await new Promise((resolve) =>
           setTimeout(resolve, retryDelayMs * (attempt + 1))
         );
         continue;
       }
       throw new Error(formatFetchError(error, context));
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
   throw new Error(formatFetchError(lastError, context));
+}
+
+/** AbortSignal.any with a fallback for runtimes that lack it. */
+function anySignal(signals: AbortSignal[]): AbortSignal {
+  if (signals.length === 1) return signals[0];
+
+  const anyFn = (
+    AbortSignal as unknown as { any?: (list: AbortSignal[]) => AbortSignal }
+  ).any;
+  if (typeof anyFn === "function") return anyFn(signals);
+
+  const controller = new AbortController();
+  for (const signal of signals) {
+    if (signal.aborted) {
+      controller.abort(signal.reason);
+      break;
+    }
+    signal.addEventListener("abort", () => controller.abort(signal.reason), {
+      once: true,
+    });
+  }
+  return controller.signal;
 }

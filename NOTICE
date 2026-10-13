@@ -1,0 +1,74 @@
+Revel
+Copyright 2026 BlindspotLab Limited
+
+This product includes software developed by BlindspotLab Limited
+(https://blindspotlab.xyz).
+
+Licensed under the Apache License, Version 2.0. See LICENSE for the full text.
+
+--------------------------------------------------------------------------------
+TRADEMARKS AND BRAND
+--------------------------------------------------------------------------------
+
+The Apache License, Version 2.0 is a licence to the SOFTWARE only. Section 6 of
+that licence expressly does not grant permission to use the licensor's trade
+names, trademarks, service marks or product names.
+
+The following remain the property of BlindspotLab Limited and are NOT licensed
+under Apache-2.0:
+
+  - The names "Revel" and "BlindspotLab"
+  - The Revel and BlindspotLab logos, wordmarks and avatars, including the
+    assets under public/brand/ and the badge asset served from
+    https://blindspotlab.xyz/brand/
+  - Revel and BlindspotLab visual identity, including the illustration set
+    under public/images/
+
+Use of the software does not grant any right to use these marks. For brand
+permission, contact hello@blindspotlab.xyz.
+
+--------------------------------------------------------------------------------
+THIRD-PARTY MATERIAL VENDORED IN THIS REPOSITORY
+--------------------------------------------------------------------------------
+
+The directories `.agents/skills/` and `.claude/skills/` contain agent-tooling
+material authored by third parties. That material is NOT first-party work, is
+NOT covered by the root Apache-2.0 licence, and retains the licence of its
+respective author. It is development tooling and is not part of the deployed
+Revel application.
+
+Known third-party items:
+
+  .agents/skills/supabase-postgres-best-practices/
+      Author: Supabase. Declared licence: MIT.
+      The MIT licence and its attribution requirement are retained in full.
+
+  .agents/skills/supabase/
+      Author: Supabase. Licence not declared in the vendored copy.
+
+  .agents/skills/remotion-best-practices/
+      Derived from Remotion documentation. Remotion is distributed under the
+      Remotion Licence, which is not an OSI-approved open-source licence and
+      has separate terms for companies. Licence not declared in the vendored
+      copy.
+
+  .agents/skills/frontend-design/
+      Declares "license: Complete terms in LICENSE.txt", but no LICENSE.txt is
+      present in the vendored copy, so the terms are unresolved.
+
+  .agents/skills/code-reviewer/, .claude/skills/code-reviewer/
+  .agents/skills/stackbrief/,     .claude/skills/stackbrief/
+      Licence not declared in the vendored copy.
+
+Runtime dependencies are not vendored; their licences are those declared in
+their own packages and are reproduced in node_modules. Nothing in this NOTICE
+removes or modifies a third-party licence or attribution requirement.
+
+--------------------------------------------------------------------------------
+PRIOR LICENSING
+--------------------------------------------------------------------------------
+
+Before 2026-10-13 this repository carried a proprietary "all rights reserved"
+notice naming Mojeeb Titilayo and BlindspotLab. That notice was replaced with
+Apache-2.0 by the copyright owner. The prior authorship of Mojeeb Titilayo is
+preserved in the package author metadata and in the Git history.

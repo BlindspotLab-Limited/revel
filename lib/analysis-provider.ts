@@ -2,15 +2,16 @@ import { isNetworkFetchError } from "@/lib/resilient-fetch";
 
 export type AnalysisMode = "agentic" | "legacy";
 /** Ordered backends — Groq and OpenRouter first; Gemini last (tight free quota). */
-export type AnalysisBackend = "groq" | "openrouter" | "gemini";
+export type AnalysisBackend = "groq" | "openrouter" | "gemini" | "nvidia";
 /** @deprecated Use AnalysisBackend — kept for older call sites */
-export type AgentProvider = "groq" | "gemini";
+export type AgentProvider = "groq" | "gemini" | "nvidia";
 
 /**
  * Default analysis order when ANALYSIS_PROVIDER=auto:
- * 1. Groq — agentic tool calling, strong free tier
- * 2. OpenRouter — single-shot grounded JSON (paid/reliable models)
- * 3. Gemini — last resort (small free quota)
+ * 1. NVIDIA — primary when NVIDIA_API_KEY is set (NVIDIA_PRIMARY=false demotes it)
+ * 2. Groq — agentic tool calling, free tier (tight rate limits)
+ * 3. OpenRouter — single-shot grounded JSON (paid/reliable models)
+ * 4. Gemini — last resort (small free quota)
  */
 export function getAnalysisMode(): AnalysisMode {
   const raw = process.env.ANALYSIS_MODE?.toLowerCase();
@@ -38,6 +39,25 @@ export function isGeminiAgentEnabled(): boolean {
 
 export function isOpenRouterEnabled(): boolean {
   return Boolean(process.env.OPENROUTER_API_KEY?.trim());
+}
+
+export function isNvidiaAgentEnabled(): boolean {
+  return Boolean(process.env.NVIDIA_API_KEY?.trim());
+}
+
+/**
+ * NVIDIA is the primary analysis provider when its key is configured
+ * (owner decision, 2026-10-13); Groq, OpenRouter and Gemini are fallbacks.
+ *
+ * Opt out without removing the key by setting NVIDIA_PRIMARY=false, which
+ * demotes NVIDIA to the end of the chain. With no key configured the order is
+ * unchanged, so this cannot alter an environment that has not been given one.
+ */
+export function isNvidiaPrimary(): boolean {
+  return (
+    isNvidiaAgentEnabled() &&
+    process.env.NVIDIA_PRIMARY?.toLowerCase() !== "false"
+  );
 }
 
 /**
@@ -68,27 +88,47 @@ export function getAnalysisProviderChain(): AnalysisBackend[] {
     if (backend === "groq" && !isGroqAgentEnabled()) return;
     if (backend === "openrouter" && !isOpenRouterEnabled()) return;
     if (backend === "gemini" && !isGeminiAgentEnabled()) return;
+    if (backend === "nvidia" && !isNvidiaAgentEnabled()) return;
     chain.push(backend);
   };
 
   if (
     preferred === "groq" ||
     preferred === "openrouter" ||
-    preferred === "gemini"
+    preferred === "gemini" ||
+    preferred === "nvidia"
   ) {
     push(preferred);
   }
 
-  // Default order: Groq → OpenRouter → Gemini (Gemini last)
+  // Default order: NVIDIA (primary) → Groq → OpenRouter → Gemini (last).
+  // NVIDIA leads only when a key is configured and NVIDIA_PRIMARY is not
+  // "false"; otherwise the previous Groq-first order is preserved exactly.
+  if (isNvidiaPrimary()) {
+    push("nvidia");
+  }
   push("groq");
   push("openrouter");
   push("gemini");
+  // Demoted NVIDIA still available as a last resort.
+  push("nvidia");
 
   return chain;
 }
 
-const DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile";
-const BUILTIN_GROQ_FALLBACKS = ["llama-3.1-8b-instant"];
+/**
+ * Groq defaults.
+ *
+ * Verified against GET https://api.groq.com/openai/v1/models on 2026-10-13:
+ * the previous defaults `llama-3.3-70b-versatile` and `llama-3.1-8b-instant`
+ * have been decommissioned and return HTTP 404 ("model does not exist"). Groq
+ * is first in the production cascade, so every audit was failing through it.
+ *
+ * These are tool-calling capable models that the account can currently reach.
+ * Re-verify against /v1/models when Groq retires a model again.
+ */
+const DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b";
+const BUILTIN_GROQ_FALLBACKS = ["openai/gpt-oss-20b", "qwen/qwen3.8-27b"];
 
 export function getGroqModel(): string {
   return getGroqModels()[0];
@@ -101,7 +141,13 @@ export function getGroqModels(): string[] {
     .map((model) => model.trim())
     .filter(Boolean);
 
-  const removed = new Set(["meta-llama/llama-4-scout-17b-16e-instruct"]);
+  // Models Groq has retired. Keeping them out stops a stale env var from
+  // pinning a 404 model as the primary and burning the first attempt.
+  const removed = new Set([
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+  ]);
   return [
     ...new Set(
       [primary, ...extra, ...BUILTIN_GROQ_FALLBACKS.filter((m) => m !== primary)]
@@ -133,9 +179,99 @@ export function getGeminiModels(): string[] {
   ];
 }
 
+/** Official OpenAI-compatible NVIDIA endpoint (verified against /v1/models). */
+export const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
+
+const DEFAULT_NVIDIA_MODEL = "nvidia/nemotron-3-super-120b-a12b";
+const BUILTIN_NVIDIA_FALLBACKS = ["nvidia/nemotron-nano-3-30b-a3b"];
+
+export function getNvidiaBaseUrl(): string {
+  return process.env.NVIDIA_BASE_URL?.trim() || NVIDIA_BASE_URL;
+}
+
+export function getNvidiaModel(): string {
+  return getNvidiaModels()[0];
+}
+
+export function getNvidiaModels(): string[] {
+  const primary = process.env.NVIDIA_MODEL?.trim() || DEFAULT_NVIDIA_MODEL;
+  const extra = (process.env.NVIDIA_MODEL_FALLBACK ?? "")
+    .split(",")
+    .map((model) => model.trim())
+    .filter(Boolean);
+
+  return [
+    ...new Set([
+      primary,
+      ...extra,
+      ...BUILTIN_NVIDIA_FALLBACKS.filter((model) => model !== primary),
+    ]),
+  ];
+}
+
+/**
+ * Nemotron 3 reasoning is controlled through `chat_template_kwargs`
+ * (`enable_thinking`, `low_effort`) rather than a top-level `reasoning_effort`
+ * field. Reasoning is ON by default upstream; we default it OFF because
+ * reasoning traces must never reach a customer report and add latency we
+ * cannot spend inside a Vercel function budget.
+ */
+export function getNvidiaThinkingConfig(): {
+  enableThinking: boolean;
+  lowEffort: boolean;
+} {
+  const raw = process.env.NVIDIA_REASONING?.toLowerCase().trim();
+  if (raw === "high") return { enableThinking: true, lowEffort: false };
+  if (raw === "low") return { enableThinking: true, lowEffort: true };
+  return { enableThinking: false, lowEffort: false };
+}
+
+export function getNvidiaMaxOutputTokens(): number {
+  const n = Number(process.env.NVIDIA_MAX_OUTPUT_TOKENS ?? "8192");
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 32768) : 8192;
+}
+
 export function getAgentMaxSteps(): number {
   const n = Number(process.env.AGENT_MAX_STEPS ?? "10");
   return Number.isFinite(n) && n > 0 ? Math.min(n, 20) : 10;
+}
+
+/**
+ * Page-coverage policy for agentic runs.
+ *
+ * The documented behaviour (system prompt, A2MCP skill) is "homepage plus 2-4
+ * key pages". The agents previously forced `tool_choice: submit_analysis_report`
+ * as soon as two fetches succeeded, so the documented coverage could never
+ * happen. These bounds are the single source of truth for both.
+ */
+export function getAuditPageTarget(): { min: number; max: number } {
+  const min = Number(process.env.AUDIT_MIN_PAGES ?? "2");
+  const max = Number(process.env.AUDIT_MAX_PAGES ?? "4");
+  const safeMin = Number.isFinite(min) && min > 0 ? Math.min(min, 6) : 2;
+  const safeMax = Number.isFinite(max) && max >= safeMin ? Math.min(max, 8) : 4;
+  return { min: safeMin, max: safeMax };
+}
+
+/**
+ * Total wall-clock budget for one audit, kept under the Vercel function
+ * maxDuration (300s) so the run finishes and persists a result rather than
+ * being killed mid-flight with the record stuck in "processing".
+ */
+export function getAuditBudgetMs(): number {
+  const n = Number(process.env.AUDIT_BUDGET_MS ?? "240000");
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 280_000) : 240_000;
+}
+
+/** Per-request deadline for a single provider HTTP call. */
+export function getProviderRequestTimeoutMs(): number {
+  const n = Number(process.env.PROVIDER_REQUEST_TIMEOUT_MS ?? "60000");
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 180_000) : 60_000;
+}
+
+/** Bounded retries for a single provider call. */
+export function getProviderMaxRetries(): number {
+  const n = Number(process.env.PROVIDER_MAX_RETRIES ?? "2");
+  return Number.isFinite(n) && n >= 0 ? Math.min(n, 5) : 2;
 }
 
 function errorTextForMatch(error: unknown): string {

@@ -154,6 +154,18 @@
   display: none;
 }
 
+/* Studio badge: normal flow above the hero grid, never stretched by it. */
+.hero-section__badge {
+  flex: 0 0 auto;
+}
+
+/* The supplied badge markup has no focus style; add a visible one. */
+.blindspotlab-badge__link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
 .first-viewport__social {
   flex-shrink: 0;
 }
@@ -223,6 +235,16 @@
   }
 
   .hero-section__copy {
+    position: relative;
+    z-index: 2;
+  }
+
+  /*
+    On mobile the hero artwork is an absolute background (z-index 0) under a
+    scrim (z-index 1). The badge must join the copy layer or the scrim would
+    wash it out.
+  */
+  .hero-section__badge {
     position: relative;
     z-index: 2;
   }

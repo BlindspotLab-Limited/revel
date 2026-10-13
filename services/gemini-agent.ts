@@ -1,8 +1,22 @@
 import {
   getAgentMaxSteps,
+  getAuditBudgetMs,
+  getAuditPageTarget,
   getGeminiModels,
+  getProviderMaxRetries,
+  getProviderRequestTimeoutMs,
 } from "@/lib/analysis-provider";
-import { resilientFetch } from "@/lib/resilient-fetch";
+import {
+  classifyProviderFailure,
+  normalizeGeminiUsage,
+  recordProviderAttempt,
+  UNAVAILABLE_USAGE,
+} from "@/lib/ai-usage/recorder";
+import {
+  DeadlineExceededError,
+  isDeadlineError,
+  resilientFetch,
+} from "@/lib/resilient-fetch";
 import { buildAgentSystemPrompt } from "@/lib/prompt-builder";
 import type { AnalysisReport } from "@/types/analysis";
 import {
@@ -33,6 +47,8 @@ interface GeminiCandidate {
 interface GeminiResponse {
   candidates?: GeminiCandidate[];
   promptFeedback?: { blockReason?: string };
+  usageMetadata?: unknown;
+  responseId?: string;
 }
 
 function geminiEndpoint(model: string, apiKey: string): string {
@@ -71,15 +87,19 @@ async function callGemini(
   apiKey: string,
   model: string,
   contents: GeminiContent[],
-  options?: { submitOnly?: boolean }
+  options?: { submitOnly?: boolean; deadlineSignal?: AbortSignal }
 ): Promise<
   | { ok: true; data: GeminiResponse }
   | { ok: false; status: number; detail: string }
 > {
+  const startedAt = Date.now();
+
   try {
     const response = await resilientFetch(geminiEndpoint(model, apiKey), {
       context: "Gemini API",
-      retries: 2,
+      retries: getProviderMaxRetries(),
+      timeoutMs: getProviderRequestTimeoutMs(),
+      deadlineSignal: options?.deadlineSignal,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -98,15 +118,76 @@ async function callGemini(
       }),
     });
 
+    const latencyMs = Date.now() - startedAt;
+
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
+      const { status, errorKind } = classifyProviderFailure(
+        response.status,
+        detail
+      );
+      await recordProviderAttempt({
+        provider: "gemini",
+        model,
+        status,
+        errorKind,
+        errorDetail: detail,
+        httpStatus: response.status,
+        latencyMs,
+        usage: UNAVAILABLE_USAGE,
+      });
       return { ok: false, status: response.status, detail };
     }
 
-    return { ok: true, data: (await response.json()) as GeminiResponse };
+    const data = (await response.json()) as GeminiResponse;
+    const truncated = data.candidates?.[0]?.finishReason === "MAX_TOKENS";
+
+    await recordProviderAttempt({
+      provider: "gemini",
+      model,
+      status: truncated ? "invalid_output" : "success",
+      ...(truncated
+        ? { errorKind: "truncated", errorDetail: "finishReason=MAX_TOKENS" }
+        : {}),
+      httpStatus: response.status,
+      latencyMs,
+      providerRequestId: data.responseId,
+      usage: normalizeGeminiUsage(data.usageMetadata),
+    });
+
+    return { ok: true, data };
   } catch (error) {
+    const latencyMs = Date.now() - startedAt;
+
+    if (isDeadlineError(error)) {
+      await recordProviderAttempt({
+        provider: "gemini",
+        model,
+        status: "timeout",
+        errorKind: "deadline",
+        errorDetail: error instanceof Error ? error.message : "deadline",
+        latencyMs,
+        usage: UNAVAILABLE_USAGE,
+      });
+      throw error instanceof DeadlineExceededError
+        ? error
+        : new DeadlineExceededError("Gemini API");
+    }
+
     const detail =
       error instanceof Error ? error.message : "Gemini API unreachable";
+    const { status, errorKind } = classifyProviderFailure(undefined, detail);
+
+    await recordProviderAttempt({
+      provider: "gemini",
+      model,
+      status,
+      errorKind,
+      errorDetail: detail,
+      latencyMs,
+      usage: UNAVAILABLE_USAGE,
+    });
+
     return { ok: false, status: 503, detail };
   }
 }
@@ -116,7 +197,7 @@ async function callGeminiWithFallback(
   contents: GeminiContent[],
   preferredModel: string,
   models: string[],
-  options?: { submitOnly?: boolean }
+  options?: { submitOnly?: boolean; deadlineSignal?: AbortSignal }
 ): Promise<{ data: GeminiResponse; model: string }> {
   const ordered = [
     preferredModel,
@@ -201,17 +282,23 @@ function describeEmptyCandidate(
     .join(", ");
 }
 
-function nextToolNudge(fetchedPages: number): string {
+function nextToolNudge(
+  fetchedPages: number,
+  target: { min: number; max: number }
+): string {
   if (fetchedPages === 0) {
     return "Call fetch_url on the homepage now.";
   }
   if (fetchedPages === 1) {
-    return "Call discover_internal_links on the homepage, then fetch_url on one pricing/about page.";
+    return "Call discover_internal_links on the homepage, then fetch_url on a key page (pricing, about, features or product).";
   }
-  if (fetchedPages < 3) {
-    return "Call fetch_url on one more key page if needed, or submit_analysis_report with report_json.";
+  if (fetchedPages < target.min) {
+    return `Fetch at least ${target.min} pages before submitting.`;
   }
-  return "You have enough context. Call submit_analysis_report with report_json containing the full audit JSON.";
+  if (fetchedPages < target.max) {
+    return "Fetch another key page if it would add evidence, otherwise call submit_analysis_report with report_json.";
+  }
+  return "You have enough coverage. Call submit_analysis_report with report_json.";
 }
 
 export async function runGeminiAgent(website: string): Promise<AnalysisReport> {
@@ -223,14 +310,23 @@ export async function runGeminiAgent(website: string): Promise<AnalysisReport> {
   const models = getGeminiModels();
   let activeModel = models[0];
   const maxSteps = getAgentMaxSteps();
+  const target = getAuditPageTarget();
+
+  // Total audit budget so the run always reaches a persisted terminal state.
+  const budgetController = new AbortController();
+  const budgetTimer = setTimeout(
+    () => budgetController.abort(),
+    getAuditBudgetMs()
+  );
+
   const contents: GeminiContent[] = [
     {
       role: "user",
       parts: [
         {
-          text: `Analyze this website and produce a strategic product audit: ${website}
+          text: `Analyze this website and produce a product, messaging and UX-copy audit: ${website}
 
-Start by fetching the homepage, then discover and fetch 1-2 key pages (pricing or about). Submit via submit_analysis_report with report_json as soon as you have enough evidence — do not over-fetch.`,
+Fetch the homepage first, then discover internal links and fetch the key pages that exist (aim for ${target.min}-${target.max} pages in total). Submit via submit_analysis_report once the evidence you have supports your findings. Report only what you actually found.`,
         },
       ],
     },
@@ -238,20 +334,31 @@ Start by fetching the homepage, then discover and fetch 1-2 key pages (pricing o
 
   let submittedReport: AnalysisReport | null = null;
   let fetchedPages = 0;
+  let rejectionCount = 0;
 
+  try {
   for (let step = 0; step < maxSteps; step++) {
-    const submitOnly = fetchedPages >= 2 || step >= maxSteps - 2;
+    if (budgetController.signal.aborted) {
+      throw new DeadlineExceededError("audit budget");
+    }
+
+    // Force the final submit only when coverage is complete or the step budget
+    // is nearly spent — not merely because two pages happened to load.
+    const submitOnly = fetchedPages >= target.max || step >= maxSteps - 2;
     let modelParts: GeminiPart[] = [];
     let functionCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
     let candidate: GeminiCandidate | undefined;
     let data: GeminiResponse | undefined;
 
-    if (submitOnly) {
+    if (submitOnly && !submittedReport) {
       contents.push({
         role: "user",
         parts: [
           {
-            text: "You have enough page content. Call submit_analysis_report now. Requirements: ≥4 blindspots with description≠title and specific suggestedFix (never 'Review this area…'), ≥2 categories, ≥1 high/critical priority, ≥3 blueprint steps, ≥5 actions. Quote real page text in descriptions.",
+            text: `${nextToolNudge(
+              fetchedPages,
+              target
+            )} Ground every finding in text you fetched. Do not pad the finding list and do not inflate severity.`,
           },
         ],
       });
@@ -264,7 +371,7 @@ Start by fetching the homepage, then discover and fetch 1-2 key pages (pricing o
         contents,
         activeModel,
         models,
-        { submitOnly }
+        { submitOnly, deadlineSignal: budgetController.signal }
       ));
       activeModel = usedModel;
 
@@ -291,7 +398,10 @@ Start by fetching the homepage, then discover and fetch 1-2 key pages (pricing o
         role: "user",
         parts: [
           {
-            text: `${nextToolNudge(fetchedPages)} Respond with a function call, not plain text.`,
+            text: `${nextToolNudge(
+              fetchedPages,
+              target
+            )} Respond with a function call, not plain text.`,
           },
         ],
       });
@@ -324,8 +434,34 @@ Start by fetching the homepage, then discover and fetch 1-2 key pages (pricing o
         functionResponse: { name: call.name, response: result.response },
       });
 
-      if (call.name === "fetch_url" && !result.response.error) {
+      if (call.name === "fetch_url" && result.response.contentRetrieved === true) {
         fetchedPages++;
+      }
+
+      // A report that failed evidence validation is a recorded outcome, not a
+      // silent retry: the model gets the reason and one more chance.
+      if (call.name === "submit_analysis_report" && !result.report) {
+        rejectionCount++;
+        await recordProviderAttempt({
+          provider: "gemini",
+          model: activeModel,
+          status: "report_rejected",
+          errorKind:
+            result.response.evidenceRejected === true
+              ? "evidence_unsupported"
+              : "report_incomplete",
+          errorDetail: String(result.response.error ?? ""),
+          latencyMs: 0,
+          usage: UNAVAILABLE_USAGE,
+        });
+
+        if (rejectionCount >= 3) {
+          throw new Error(
+            `Gemini report rejected ${rejectionCount} times: ${String(
+              result.response.error ?? "unsupported claims"
+            ).slice(0, 300)}`
+          );
+        }
       }
 
       if (result.report) {
@@ -341,6 +477,9 @@ Start by fetching the homepage, then discover and fetch 1-2 key pages (pricing o
   }
 
   throw new Error(
-    `Agent did not submit a report within ${maxSteps} steps. Try increasing AGENT_MAX_STEPS.`
+    `Agent did not submit an accepted report within ${maxSteps} steps.`
   );
+  } finally {
+    clearTimeout(budgetTimer);
+  }
 }

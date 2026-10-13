@@ -1,6 +1,7 @@
 type LogEvent =
   | "analysis_started"
   | "analysis_completed"
+  | "analysis_partial"
   | "analysis_failed"
   | "export_completed";
 

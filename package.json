@@ -2,7 +2,7 @@
   "name": "revel",
   "version": "0.1.0",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "author": "Mojeeb Titilayo <hello@blindspotlab.xyz> (https://mojeeb.xyz)",
   "scripts": {
     "dev": "node --dns-result-order=ipv4first node_modules/next/dist/bin/next dev --webpack",
@@ -31,7 +31,11 @@
     "db:setup": "node scripts/check-db.mjs",
     "db:schema": "node scripts/apply-mission-control-schema.mjs",
     "env:merge": "node scripts/merge-env-keys.mjs",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test": "node scripts/run-tests.mjs",
+    "typecheck": "tsc --noEmit",
+    "okx:validate": "node scripts/validate-revel-listing.mjs",
+    "okx:submit": "node scripts/create-revel-asp.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

@@ -49,10 +49,15 @@ model Analysis {
   id              String           @id @db.Uuid
   userId          String?          @map("user_id")
   website         String
+  /** processing | completed | partial | failed */
   status          String           @default("processing")
   score           Int?
   error           String?
   createdAt       DateTime?        @default(now()) @map("created_at") @db.Timestamptz(6)
+  /** Set when the run reaches a terminal state (completed, partial or failed). */
+  completedAt     DateTime?        @map("completed_at") @db.Timestamptz(6)
+  /** Wall-clock run duration, for median/p95 reporting. */
+  durationMs      Int?             @map("duration_ms")
   user            User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
   report          Report?
   partnerAnalysis PartnerAnalysis?
@@ -91,6 +96,55 @@ model ActivityEvent {
   @@index([source], map: "idx_activity_events_source")
   @@index([userId], map: "idx_activity_events_user_id")
   @@map("activity_events")
+}
+
+/**
+ * One row per AI provider attempt — including attempts that failed, so cost
+ * per completed audit includes the retries and fallbacks it really consumed.
+ *
+ * NULL token/cost columns mean "unknown", never zero. `costSource`
+ * distinguishes a genuinely free call from a missing price.
+ * Holds no prompts, page bodies, credentials or user content.
+ */
+model AiUsageEvent {
+  id                        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /** Unique per attempt — the idempotency key that prevents double accounting. */
+  attemptId                 String    @unique @map("attempt_id") @db.Uuid
+  analysisId                String?   @map("analysis_id") @db.Uuid
+  source                    String?
+  provider                  String
+  /** Exact model identifier as sent to the provider. */
+  model                     String
+  status                    String
+  /** 0-based attempt counter within one audit. */
+  attemptIndex              Int       @default(0) @map("attempt_index")
+  latencyMs                 Int       @map("latency_ms")
+  providerRequestId         String?   @map("provider_request_id")
+  httpStatus                Int?      @map("http_status")
+  inputTokens               Int?      @map("input_tokens")
+  outputTokens              Int?      @map("output_tokens")
+  totalTokens               Int?      @map("total_tokens")
+  reasoningTokens           Int?      @map("reasoning_tokens")
+  cachedInputTokens         Int?      @map("cached_input_tokens")
+  /** True when reasoningTokens are already inside outputTokens. */
+  reasoningIncludedInOutput Boolean?  @map("reasoning_included_in_output")
+  /** provider_reported | estimated | unavailable */
+  usageSource               String    @map("usage_source")
+  reportedCostUsd           Decimal?  @map("reported_cost_usd") @db.Decimal(14, 8)
+  estimatedCostUsd          Decimal?  @map("estimated_cost_usd") @db.Decimal(14, 8)
+  /** provider_reported | estimated | free_tier | unknown */
+  costSource                String    @map("cost_source")
+  pricingVersion            String?   @map("pricing_version")
+  errorKind                 String?   @map("error_kind")
+  errorDetail               String?   @map("error_detail")
+  createdAt                 DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdAt(sort: Desc)], map: "idx_ai_usage_events_created_at")
+  @@index([analysisId], map: "idx_ai_usage_events_analysis_id")
+  @@index([provider, model], map: "idx_ai_usage_events_provider_model")
+  @@index([status], map: "idx_ai_usage_events_status")
+  @@index([source], map: "idx_ai_usage_events_source")
+  @@map("ai_usage_events")
 }
 
 model Partner {

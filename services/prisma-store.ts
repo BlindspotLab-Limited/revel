@@ -12,6 +12,8 @@ function toAnalysis(
     score: number | null;
     error: string | null;
     createdAt: Date | null;
+    completedAt?: Date | null;
+    durationMs?: number | null;
     report?: { jsonResult: Prisma.JsonValue } | null;
   }
 ): Analysis {
@@ -28,6 +30,8 @@ function toAnalysis(
     status: row.status as Analysis["status"],
     score: report?.score ?? row.score ?? undefined,
     createdAt: row.createdAt?.toISOString() ?? new Date().toISOString(),
+    completedAt: row.completedAt?.toISOString() ?? undefined,
+    durationMs: row.durationMs ?? undefined,
     report,
     error: row.error ?? undefined,
   };
@@ -65,6 +69,8 @@ export async function getAllAnalysesFromPrisma(
       score: true,
       error: true,
       createdAt: true,
+      completedAt: true,
+      durationMs: true,
     },
   });
 
@@ -99,6 +105,10 @@ export async function saveAnalysisToPrisma(
       createdAt: analysis.createdAt
         ? new Date(analysis.createdAt)
         : undefined,
+      completedAt: analysis.completedAt
+        ? new Date(analysis.completedAt)
+        : null,
+      durationMs: analysis.durationMs ?? null,
     },
     update: {
       userId: analysis.userId ?? null,
@@ -106,6 +116,10 @@ export async function saveAnalysisToPrisma(
       status: analysis.status,
       score: analysis.score ?? null,
       error: analysis.error ?? null,
+      completedAt: analysis.completedAt
+        ? new Date(analysis.completedAt)
+        : null,
+      durationMs: analysis.durationMs ?? null,
     },
   });
 

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withX402 } from "@okxweb3/app-x402-next";
 import {
-  ensureOkxResourceServerReady,
   getMcpRouteConfig,
   getOkxBillingManifest,
   getOkxResourceServer,
+  getResourceServerReadiness,
   isOkxBillingEnabled,
+  okxBillingUnavailableBody,
 } from "@/lib/billing/okx-x402";
 import {
   applyX402Cors,
@@ -133,15 +134,39 @@ export async function POST(request: NextRequest) {
       return mcpPostHandler(requestWithBody, false);
     }
 
-    await ensureOkxResourceServerReady();
-    // Force non-browser headers so SDK emits PAYMENT-REQUIRED (not HTML paywall).
-    const paidRequest = asX402ApiClientRequest(requestWithBody, bodyText);
-    const paidPost = withX402(
-      (req) => mcpPostHandler(req, true),
-      getMcpRouteConfig(),
-      getOkxResourceServer()
-    );
-    return applyCors(await paidPost(paidRequest));
+    // Readiness is checked without throwing: a rejected-credential facilitator
+    // used to surface as an empty HTTP 500 from this line, which breaks every
+    // paid client and fails OKX's x402 validator.
+    const readiness = await getResourceServerReadiness();
+    if (!readiness.ok) {
+      return applyCors(
+        NextResponse.json(okxBillingUnavailableBody(readiness.error), {
+          status: 503,
+        })
+      );
+    }
+
+    try {
+      // Force non-browser headers so SDK emits PAYMENT-REQUIRED (not HTML paywall).
+      const paidRequest = asX402ApiClientRequest(requestWithBody, bodyText);
+      const paidPost = withX402(
+        (req) => mcpPostHandler(req, true),
+        getMcpRouteConfig(),
+        getOkxResourceServer()
+      );
+      return applyCors(await paidPost(paidRequest));
+    } catch (error) {
+      const { logServerError } = await import("@/lib/safe-client-error");
+      logServerError("mcp_x402_paywall_failed", error);
+      return applyCors(
+        NextResponse.json(
+          okxBillingUnavailableBody(
+            error instanceof Error ? error.message : "x402 paywall error"
+          ),
+          { status: 503 }
+        )
+      );
+    }
   }
 
   return applyCors(mcpUnauthorizedResponse());

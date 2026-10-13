@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { BlindspotLabBadge } from "@/components/brand/blindspotlab-badge";
 import { IllustrationSlot } from "@/components/landing/illustration-slot";
 import { SectionIllustration } from "@/components/landing/section-illustration";
 import { PUBLIC_SAMPLE_REPORT_PATH } from "@/lib/public-sample-report";
@@ -11,6 +12,16 @@ import { DEFAULT_WEEKLY_AUDIT_LIMIT } from "@/lib/weekly-audit-limit-config";
 export function Hero() {
   return (
     <section className="hero-section illustration-section w-full">
+      {/*
+        Studio badge sits above both the headline and the hero artwork, in
+        normal document flow, centred on desktop and mobile. It is a sibling of
+        the two-column layout (not inside the copy column) so it centres against
+        the full hero width rather than the text column.
+      */}
+      <div className="hero-section__badge mx-auto w-full max-w-6xl px-4 sm:px-6">
+        <BlindspotLabBadge />
+      </div>
+
       <div className="hero-section__layout mx-auto grid w-full max-w-6xl flex-1 grid-cols-1 content-center items-center gap-6 px-4 sm:px-6 md:grid-cols-2 md:gap-12 lg:gap-16">
         <div className="hero-section__copy max-w-xl min-w-0">
           <motion.h1
