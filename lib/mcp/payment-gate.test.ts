@@ -64,7 +64,16 @@ assert.equal(
   ),
   true
 );
-assert.equal(mcpBodyRequiresPayment(""), false);
+// A bare POST with no body is the OKX x402 validator's own probe
+// (`curl -i -X POST <endpoint>` → expect 402 + PAYMENT-REQUIRED), so it must
+// require payment. This assertion previously expected `false` and had been
+// failing since commit 191af40 changed the implementation to match the
+// marketplace requirement.
+assert.equal(mcpBodyRequiresPayment(""), true);
+assert.equal(mcpBodyRequiresPayment("   "), true);
+assert.equal(mcpBodyRequiresPayment("not json"), true);
+assert.equal(mcpBodyRequiresPayment("[]"), true);
+assert.equal(mcpBodyRequiresPayment("{}"), true);
 assert.equal(isBillableMcpTool("revel_analyze_website"), true);
 assert.equal(isBillableMcpTool("revel_health"), false);
 

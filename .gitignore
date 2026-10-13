@@ -64,3 +64,8 @@ next-env.d.ts
 # local scratch (not for repo)
 agent-tools/
 .claude/
+
+# Local-only operational notes. NOT committed, NOT pushed, NOT available to
+# other maintainers, CI, or agents in a fresh clone. Anything another person
+# needs must live in a tracked file or the team secret store.
+ops-local/

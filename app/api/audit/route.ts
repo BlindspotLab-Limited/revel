@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withX402 } from "@okxweb3/app-x402-next";
 import {
-  ensureOkxResourceServerReady,
   getAuditRouteConfig,
   getOkxBillingManifest,
   getOkxResourceServer,
+  getResourceServerReadiness,
   isOkxBillingEnabled,
+  okxBillingUnavailableBody,
 } from "@/lib/billing/okx-x402";
 import {
   applyX402Cors,
@@ -32,8 +33,6 @@ function applyCors(response: Response): NextResponse {
 }
 
 async function auditHandler(request: NextRequest): Promise<NextResponse> {
-  await ensureOkxResourceServerReady();
-
   let body: { url?: string };
   try {
     body = await request.json();
@@ -111,19 +110,42 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Readiness is checked without throwing. A facilitator that rejects our
+  // credentials used to escape as an empty HTTP 500 from inside the handler,
+  // which breaks paid clients and fails OKX's x402 validator.
+  const readiness = await getResourceServerReadiness();
+  if (!readiness.ok) {
+    return NextResponse.json(okxBillingUnavailableBody(readiness.error), {
+      status: 503,
+      headers: corsHeaders,
+    });
+  }
+
   // Force API-client Accept/UA so withX402 never returns HTML without
   // PAYMENT-REQUIRED (fails OKX marketplace x402 standard validation).
   const bodyText = await request.text();
-  const paidRequest = asX402ApiClientRequest(request, bodyText);
 
-  const paidPost = withX402(
-    async (req) => {
-      // Handler needs a fresh readable body
-      return auditHandler(asX402ApiClientRequest(req, bodyText));
-    },
-    getAuditRouteConfig(),
-    getOkxResourceServer()
-  );
+  try {
+    const paidRequest = asX402ApiClientRequest(request, bodyText);
 
-  return applyCors(await paidPost(paidRequest));
+    const paidPost = withX402(
+      async (req) => {
+        // Handler needs a fresh readable body
+        return auditHandler(asX402ApiClientRequest(req, bodyText));
+      },
+      getAuditRouteConfig(),
+      getOkxResourceServer()
+    );
+
+    return applyCors(await paidPost(paidRequest));
+  } catch (error) {
+    const { logServerError } = await import("@/lib/safe-client-error");
+    logServerError("audit_x402_paywall_failed", error);
+    return NextResponse.json(
+      okxBillingUnavailableBody(
+        error instanceof Error ? error.message : "x402 paywall error"
+      ),
+      { status: 503, headers: corsHeaders }
+    );
+  }
 }

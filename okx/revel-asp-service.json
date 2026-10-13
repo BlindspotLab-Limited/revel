@@ -1,0 +1,9 @@
+[
+  {
+    "serviceName": "Revel Website Product Audit",
+    "serviceType": "A2MCP",
+    "fee": "0.35",
+    "endpoint": "https://tryrevel.xyz/api/mcp",
+    "serviceDescription": "Audits a public website's product positioning, messaging and conversion copy, returning a Reveal Index score (0-100), a Blindspot Map of findings, a prioritised Blueprint and an Action Queue. Analysis is text-only over server-rendered HTML; every finding quotes page text verified against the pages actually fetched.\nYou provide: url (required), an absolute public http(s) URL to audit. Optional: timeoutSeconds (number, default 180, max 300) and format (\"markdown\" or \"json\") when exporting. Call revel_analyze_website for an analysisId, then poll revel_get_analysis until status is completed or partial."
+  }
+]

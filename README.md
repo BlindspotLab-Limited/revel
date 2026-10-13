@@ -2,271 +2,263 @@
 
 > Find the hidden gaps stopping your product from growing.
 
-**Revel** is an AI product strategist by [BlindspotLab](https://blindspotlab.xyz). Paste a public website URL, and Revel analyzes positioning, UX, messaging, and competition, then returns a scored **Reveal Index**, prioritized **Blueprint**, and exportable **Action Queue**.
+**A BlindspotLab Product.** Revel reads your public website the way a product
+strategist would, then tells you what your positioning, messaging and
+conversion copy are failing to communicate — with the page text that proves it.
 
-**Author:** [Mojeeb Titilayo](https://mojeeb.xyz) · **Company:** [BlindspotLab](https://blindspotlab.xyz)
-
-**Live:** [tryrevel.xyz](https://tryrevel.xyz) · **Docs:** [docs.tryrevel.xyz](https://docs.tryrevel.xyz) · **Repo:** [github.com/Blindspotlabxyz/revel](https://github.com/Blindspotlabxyz/revel) · **License:** Proprietary. See [LICENSE](LICENSE)
-
----
-
-## What ships today
-
-| Area | Status |
-|------|--------|
-| Website analysis | Public URLs via Mission Control (cascade: Groq → OpenRouter → Gemini) |
-| Outputs | Blindspot Map, Reveal Index, Blueprint, Action Queue |
-| Export | Markdown, GitHub MD, JSON; optional Linear / Notion / Gist when configured |
-| Auth | NextAuth (email/password + Google), forgot/reset password, editable profile |
-| Usage | 3 free audits per week per user (Mission Control); admin unlimited |
-| Partner API | `rvl_pk_` keys — analyze + poll report (`/api/partner/v1/*`) |
-| MCP / OKX | Streamable HTTP at `/api/mcp`; x402 paid audits at `/api/audit` |
-| Database | Supabase Postgres + Prisma (production) |
-| SEO / AEO | Sitemap, robots, JSON-LD, `llms.txt`, `ai.txt`, IndexNow |
-| Subdomains | `docs.`, `legal.`, `auth.` with logo home → marketing apex |
-
-**Also live:** `/compare`, `/pricing` (early access), `/guides/find-product-blindspots`, public Genesis sample report.
+**Live:** [tryrevel.xyz](https://tryrevel.xyz) ·
+**Docs:** [docs.tryrevel.xyz](https://docs.tryrevel.xyz) ·
+**Pricing:** [tryrevel.xyz/pricing](https://tryrevel.xyz/pricing)
 
 ---
 
-## Tech stack
+## What Revel does
 
-- **App:** Next.js 16, React 19, TypeScript, Tailwind 4, Framer Motion, Radix
-- **Data / auth:** Supabase Postgres, Prisma 7, NextAuth (Google + credentials), Resend
-- **AI:** Custom agentic tool loop — **Groq** (`llama-3.3-70b-versatile` → `llama-3.1-8b-instant`) → **OpenRouter** → **Gemini** last; Zod quality gates on reports
-- **Agents / payments:** MCP A2MCP (`/api/mcp`), OKX x402 on billable tools, Partner API keys
-- **Deploy:** Vercel (long-running analyze/mcp/audit functions)
+You give Revel a public website URL. It fetches the homepage and the key pages
+it can find (pricing, about, features, product), extracts the on-page text, and
+returns four things:
 
-Full technical brief (including prompt-engineering attribution): **[stacks.md](./stacks.md)**
+| Output | What it is |
+|--------|-----------|
+| **Reveal Index** | A 0–100 score summarising how clearly the site communicates its product |
+| **Blindspot Map** | The specific problems found, each tied to the page text that evidences it |
+| **Blueprint** | An ordered plan — what to fix first, with effort and expected impact |
+| **Action Queue** | Individual tasks you can hand to a person or paste into a tracker |
 
----
+Every finding carries its evidence. Quoted page text is checked against the
+pages Revel actually fetched before the report is accepted, so a finding cannot
+quote something that is not on your site.
 
-## Quick start
+## Who it helps
 
-### Prerequisites
+- **Founders** who are too close to their own copy to see what a stranger does not understand.
+- **Product and growth teams** who need a prioritised list rather than a vague critique.
+- **Agencies and consultants** running a fast first-pass review before a deeper engagement.
+- **Platforms and marketplaces** that want listing or site quality scored automatically — see the Partner API below.
 
-- Node.js 20+
-- Accounts as needed: [Groq](https://console.groq.com) or [Google AI Studio](https://aistudio.google.com), [OpenRouter](https://openrouter.ai), [Google Cloud Console](https://console.cloud.google.com) (OAuth), [Supabase](https://supabase.com), optional [Resend](https://resend.com)
+## What Revel looks for
 
-### Setup
-
-```bash
-git clone https://github.com/Blindspotlabxyz/revel.git
-cd revel
-npm install
-
-cp .env.example .env.local
-npm run env:merge          # append any missing keys
-# Fill secrets in .env.local (see .env.example)
-
-npm run db:setup           # verify database connection
-# Apply schema: npx prisma db push  (or run SQL in Supabase SQL Editor)
-npm run dev                # http://localhost:3000
-```
-
-Configure Google OAuth and set `AUTH_SECRET` / `NEXTAUTH_*` / `GOOGLE_*` in `.env.local`.
-
-### OKX x402 billing
-
-The app already wires OKX x402 billing for the paid MCP and audit endpoints. If you want marketplace/API access, add the same values from `.env.example` (or the Vercel template in `.env.vercel`) for:
-
-- `OKX_API_KEY`
-- `OKX_SECRET_KEY`
-- `OKX_PASSPHRASE`
-- `OKX_PAY_TO`
-- `OKX_AUDIT_PRICE_USD`
-
-You can verify the official SDK wiring with:
-
-```bash
-npm run verify:okx-billing
-```
-
-You can also check the runtime health endpoint:
-
-```bash
-curl http://localhost:3000/api/health
-```
-
-### Key scripts
-
-| Command | Purpose |
-|---------|---------|
-| `npm run dev` | Dev server (webpack) |
-| `npm run build` | Production build (+ IndexNow ping on Vercel) |
-| `npm run env:merge` | Sync missing keys from `.env.example` → `.env.local` |
-| `npm run indexnow:ping` | Manually ping Bing/IndexNow |
-| `npm run db:setup` | Test DB connectivity |
-| `npm run generate:brand-icons` | Regenerate favicon / PWA icons |
-| `npm run mcp` | Local MCP stdio server |
+- Positioning that never states who the product is for or what outcome it delivers
+- Headlines and subheads that describe features instead of results
+- Missing or buried pricing signals
+- Absent trust and proof elements in the page copy
+- Call-to-action labels that do not tell the visitor what happens next
+- Navigation and page structure that omit what a buyer is looking for
+- Competitive positioning that does not differentiate
 
 ---
 
-## Environment variables
+## Start an audit
 
-Copy `.env.example` to `.env.local`. On **Vercel production**:
+**On the web.** Sign in at [tryrevel.xyz/mission-control](https://tryrevel.xyz/mission-control),
+paste a public URL, and run it. An audit normally takes one to three minutes.
+Results appear in Mission Control and stay in your history.
 
-```env
-NEXT_PUBLIC_APP_URL=https://tryrevel.xyz
-NEXT_PUBLIC_MARKETING_URL=https://tryrevel.xyz
-NEXT_PUBLIC_DOCS_URL=https://docs.tryrevel.xyz
-NEXT_PUBLIC_LEGAL_URL=https://legal.tryrevel.xyz
-NEXT_PUBLIC_AUTH_URL=https://auth.tryrevel.xyz
-NEXT_PUBLIC_ENABLE_SUBDOMAIN_REDIRECTS=true
-```
+**From an agent or your own code.** Revel exposes an MCP server and a Partner
+API — see [For API and agent consumers](#for-api-and-agent-consumers).
 
-| Group | Variables |
-|-------|-----------|
-| Site | `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_MARKETING_URL`, subdomain URLs, `NEXT_PUBLIC_ENABLE_SUBDOMAIN_REDIRECTS` |
-| AI | `GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, model env vars |
-| Auth | `AUTH_SECRET` / `NEXTAUTH_SECRET`, `AUTH_URL` / `NEXTAUTH_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
-| Database | `DATABASE_URL`, `DIRECT_URL`, optional Supabase keys |
-| SEO | `GOOGLE_SITE_VERIFICATION`, `BING_SITE_VERIFICATION`, `INDEXNOW_KEY`, `CRON_SECRET` |
-| Usage | `WEEKLY_AUDIT_LIMIT` (default 3 / week) |
-| Analytics | `NEXT_PUBLIC_PLAUSIBLE_DOMAIN` (optional, e.g. `tryrevel.xyz`) |
-| MCP | `MCP_API_KEY` |
-| OKX billing | `OKX_API_KEY`, `OKX_SECRET_KEY`, `OKX_PASSPHRASE`, `OKX_PAY_TO`, `OKX_AUDIT_PRICE_USD` |
-| Email (Resend) | `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `REVEL_ADMIN_NOTIFY_EMAIL` |
-| Export OAuth (per-user) | `LINEAR_CLIENT_ID/SECRET`, `NOTION_CLIENT_ID/SECRET`, `GITHUB_CLIENT_ID/SECRET`, `INTEGRATIONS_ENCRYPTION_KEY` (encrypts OAuth tokens at rest; falls back to `AUTH_SECRET`) |
-
-### Per-user export privacy (Linear / Notion / GitHub)
-
-Cloud exports do **not** use a shared BlindspotLab Linear/Notion/GitHub workspace. Each signed-in user connects **their own** account via OAuth under **Mission Control → Integrations**. Tokens are stored encrypted; disconnecting deletes them. Downloads (Markdown / JSON / GitHub MD) never require a connection.
-
-| Provider | OAuth scopes (approx.) | Export lands in |
-|----------|------------------------|-----------------|
-| Linear | `read,write,issues:create` | User’s Linear team |
-| Notion | User-granted pages/databases | User’s Notion workspace |
-| GitHub | `gist` | User’s **private** Gist |
-
-Redirect URIs (production):
-
-```text
-https://tryrevel.xyz/api/integrations/linear/callback
-https://tryrevel.xyz/api/integrations/notion/callback
-https://tryrevel.xyz/api/integrations/github/callback
-```
-
-Generate an encryption key for local/prod:
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-# → INTEGRATIONS_ENCRYPTION_KEY=<output>
-```
-
-```bash
-node scripts/generate-secrets.mjs
-```
-
-### Database migrations
-
-Profile + password-reset + per-user integrations (if not already applied):
-
-```sql
--- Profile / password reset
-ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "name" TEXT;
-ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "username" TEXT;
-ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "image" TEXT;
-ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "password_reset_token_hash" TEXT;
-ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "password_reset_expires" TIMESTAMPTZ(6);
-CREATE UNIQUE INDEX IF NOT EXISTS "users_username_key" ON "users" ("username");
-
--- Per-user OAuth tokens for private exports
-CREATE TABLE IF NOT EXISTS "user_integrations" (
-  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  "user_id" TEXT NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
-  "provider" TEXT NOT NULL,
-  "access_token_encrypted" TEXT NOT NULL,
-  "refresh_token_encrypted" TEXT,
-  "token_expires_at" TIMESTAMPTZ(6),
-  "scopes" TEXT,
-  "metadata" JSONB,
-  "connected_at" TIMESTAMPTZ(6) DEFAULT NOW(),
-  "updated_at" TIMESTAMPTZ(6) DEFAULT NOW()
-);
-CREATE UNIQUE INDEX IF NOT EXISTS "user_integrations_user_provider_key"
-  ON "user_integrations" ("user_id", "provider");
-```
-
-Or: `npx prisma db push` / `npx prisma migrate deploy`.
+Revel only reads **public** pages. It cannot sign in, bypass a paywall, or read
+anything behind authentication.
 
 ---
 
-## Project structure
+## Reading your report
 
-```
-app/              # Routes (marketing, Mission Control, auth, API, llms.txt)
-components/       # UI, landing, dashboard, auth, SEO
-lib/              # Config, SEO, auth, logo-home, report schema, Prisma
-services/         # Analysis store, export, agents, content extraction
-prisma/           # Schema and migrations
-public/           # Brand assets, images, humans.txt
-scripts/          # DB checks, env merge, IndexNow, brand icons, MCP
-styles/           # Global CSS and design tokens
-types/            # Shared TypeScript types
-```
+### Reveal Index
 
----
+A single 0–100 score. Treat it as a relative signal to track over time, not an
+industry benchmark — it is produced from your site's own copy, not from a
+comparison set.
 
-## Routes
+### Blindspot Map
 
-**Marketing:** `/`, `/features`, `/compare`, `/pricing`, `/about`, `/contact`, `/guides/find-product-blindspots`
+Each blindspot carries:
 
-**Docs:** `/docs/*` (also `docs.tryrevel.xyz/*`)
+- **Priority** — `critical`, `high`, `medium` or `low`
+- **Category** — `product`, `ux`, `messaging` or `competition`
+- **Description** — what is wrong, quoting your page text or naming a verified absence
+- **Suggested fix** — specific steps, not generic advice
+- **Evidence** — how the claim is supported:
 
-**Legal:** `/privacy`, `/terms` (also `legal.tryrevel.xyz/*`)
+| Basis | Meaning |
+|-------|---------|
+| `measured` | Read directly from your page markup — an exact string, or an element verifiably present or absent |
+| `observed` | A reading of the fetched text that someone else could reproduce |
+| `inferred` | Judgement or comparison, not grounded in a specific quote |
 
-**App:** `/mission-control`, `/mission-control/analysis/[id]`, `/mission-control/report/[id]`, `/mission-control/history`, `/mission-control/account`, `/mission-control/settings`
+**Treat `inferred` findings as opinion.** They are often useful, but they are
+not measurements, and Revel labels them so you can tell the difference.
 
-**Auth:** `/log-in`, `/sign-up`, `/forgot-password`, `/reset-password` (also `auth.tryrevel.xyz`)
+### Blueprint
 
-**API:** `POST /api/analyze`, `GET /api/report/:id`, `POST /api/export`, `GET /api/history`, Partner + MCP routes under `/api/partner` and `/api/mcp`
+Ordered steps with estimated effort and expected impact. Work top-down: the
+order reflects what unblocks the most value earliest.
 
-**Discovery:** `/llms.txt`, `/llms-full.txt`, `/ai.txt`, `/sitemap.xml`, `/robots.txt`
+### Action Queue
 
----
+Discrete tasks with an expected outcome each. These are what you export into a
+tracker.
 
-## Subdomains & logo home
+### How to prioritise
 
-With `NEXT_PUBLIC_ENABLE_SUBDOMAIN_REDIRECTS=true`, product hosts rewrite into this app. The logo uses `NEXT_PUBLIC_MARKETING_URL` (or `NEXT_PUBLIC_APP_URL`) so **docs / legal / auth** always link back to the marketing apex via a real `<a href>`, while the apex keeps a relative Next.js `<Link href="/">`.
+1. Start with `critical` and `high` blindspots whose evidence is `measured`. These are real, confirmed and consequential.
+2. Then take blueprint steps marked `high` impact with low estimated effort.
+3. Treat `inferred` findings as prompts for a conversation, not instructions.
+4. Re-run the audit after you ship changes and watch whether the specific findings disappear.
 
----
-
-## Deploy (Vercel)
-
-1. Import `Blindspotlabxyz/revel` from GitHub  
-2. Paste env vars (production URL overrides above)  
-3. Attach domains: `tryrevel.xyz`, `docs.tryrevel.xyz`, `legal.tryrevel.xyz`, `auth.tryrevel.xyz`  
-4. Google OAuth redirect: `https://auth.tryrevel.xyz/api/auth/callback/google`  
-5. Submit `https://tryrevel.xyz/sitemap.xml` in Search Console / Bing  
-
-Production builds auto-ping [IndexNow](https://www.indexnow.org/).
+A good site will get **few findings**. Revel has no minimum finding count and
+does not inflate severity to look thorough — if there is nothing critical, it
+says so.
 
 ---
 
-## Security
+## Coverage and limitations
 
-- Env files are gitignored; only `.env.example` is tracked  
-- Middleware returns **403** for common `.env` scanner probes  
-- Analysis access checks, SSRF guards, and partner key hashing  
-- Optional: Vercel Firewall custom rule to deny `*.env` paths at the edge  
+Revel is a **product, messaging and UX-copy review built from server-rendered
+HTML text**. Being precise about this matters, because the word "audit" invites
+assumptions that would be wrong here.
+
+Every report includes a coverage block listing the pages fetched, the pages that
+failed, timestamps, and the checks that did and did not run.
+
+**What runs:** HTML fetch, title and meta-description extraction, heading
+extraction, CTA and navigation label extraction, internal link discovery,
+positioning and messaging review, conversion-copy review.
+
+**What does NOT run** — and is reported as unsupported in every report:
+
+| Not included | Why |
+|--------------|-----|
+| Layout, spacing, visual hierarchy | No page is rendered; there is no browser in the pipeline |
+| Colour contrast / WCAG accessibility | Requires computed styles from a rendered page |
+| Mobile and responsive behaviour | No viewport emulation |
+| Page speed / Core Web Vitals | No performance instrumentation or field data |
+| Technical SEO (robots.txt, sitemap, canonical, hreflang, structured data) | Not parsed |
+| Search rankings or index status | No search-console or SERP data source |
+| Broken-link verification | Links are discovered, not individually status-checked |
+| Competitor benchmarking from live competitor sites | No competitor page is fetched |
+| Content rendered only by client-side JavaScript | Extraction reads the server HTML response |
+
+Revel will not claim to have seen something it did not fetch. A page that fails
+to load is reported as a failed fetch — never as evidence that a feature is
+missing.
+
+### Partial results
+
+If some pages load and others do not, the audit is marked **partial**. You still
+get a report, and the coverage block names each page that failed and why. A
+partial report is not a failed one — it is a complete report over less evidence,
+and it says so.
 
 ---
 
-## License
+## Exports and integrations
 
-This project is **proprietary and not open source**. All rights reserved by **Mojeeb Titilayo** and **BlindspotLab**.
+**Always available, no connection required:**
 
-You may not copy, modify, distribute, sublicense, or commercially use this code without written permission. See [LICENSE](LICENSE) for full terms.
+- Markdown download
+- GitHub-flavoured Markdown
+- JSON
 
-For licensing or partnership inquiries: [hello@blindspotlab.xyz](mailto:hello@blindspotlab.xyz)
+**Optional, per-user OAuth connections** under Mission Control → Integrations:
+
+| Destination | Where the export lands |
+|-------------|------------------------|
+| Linear | Your own Linear team |
+| Notion | Pages or databases you grant |
+| GitHub Gist | Your own **private** gist |
+
+These use **your** account, not a shared BlindspotLab workspace. Tokens are
+stored encrypted and deleting the connection deletes them.
 
 ---
 
-## Vision
+## For API and agent consumers
 
-Revel is building toward an intelligence layer that AI agents and applications can call to deeply understand products — not another generic chat audit. **Blindspot Audit** (website analysis) is the first module on that path.
+Full reference: **[docs.tryrevel.xyz](https://docs.tryrevel.xyz)** ·
+[MCP docs](https://tryrevel.xyz/docs/mcp) ·
+[API docs](https://tryrevel.xyz/docs/api) ·
+[Partner docs](https://tryrevel.xyz/docs/partners)
+
+### MCP (agents)
+
+Streamable HTTP at `https://tryrevel.xyz/api/mcp`, manifest at
+`/api/mcp/manifest`. Tools:
+
+| Tool | Purpose |
+|------|---------|
+| `revel_health` | Capability and status check |
+| `revel_analyze_website` | Start an audit, returns an `analysisId` |
+| `revel_get_analysis` | Poll status and fetch the report |
+| `revel_wait_for_analysis` | Block until the audit finishes |
+| `revel_analyze_website_and_wait` | One-shot audit |
+| `revel_export_blueprint` | Export a finished report as markdown or JSON |
+| `revel_fetch_url` | Extract readable text from a public page |
+
+Over HTTP, prefer `revel_analyze_website` then poll `revel_get_analysis` —
+long blocking calls are prone to intermediary timeouts.
+
+### Partner API
+
+For platforms integrating Revel into their own product. Keys are issued per
+partner (`rvl_pk_…`) and used against `/api/partner/v1/analyze` and
+`/api/partner/v1/report/{id}`. Apply at
+[tryrevel.xyz/partners](https://tryrevel.xyz/partners).
+
+[Arcapush](https://arcapush.com) consumes this API for its listing-quality
+check. It is an integration partner that calls Revel; it does not own or
+operate Revel.
+
+### Paid agent access
+
+Billable MCP tools support the OKX Agent Payments Protocol (x402). Discovery,
+polling, health and export calls are free. Current price, network, receiving
+address and live operational status are published at
+[`/api/mcp/manifest`](https://tryrevel.xyz/api/mcp/manifest) and
+[`/api/health`](https://tryrevel.xyz/api/health) — check those rather than
+relying on a figure copied into documentation.
 
 ---
 
-Created by **[Mojeeb Titilayo](https://mojeeb.xyz)** · **BlindspotLab** · [hello@blindspotlab.xyz](mailto:hello@blindspotlab.xyz)
+## Pricing and usage limits
+
+The canonical source is **[tryrevel.xyz/pricing](https://tryrevel.xyz/pricing)**.
+
+Currently enforced in the product:
+
+- **Mission Control (web):** 3 audits per week per signed-in account, resetting Monday 00:00 UTC.
+- **Partner API:** per-partner access — whitelisted, trial, or prepaid credits — plus a per-partner rate limit.
+- **Agent access (x402):** priced per audit request; the live figure is in the manifest.
+
+Revel does not offer unlimited usage on any tier.
+
+---
+
+## Support and feedback
+
+- **Support and feedback:** hello@mail.tryrevel.xyz
+- **Security reports:** hello@blindspotlab.xyz
+- **Sample report:** a public example is linked from the homepage
+- **Studio:** [blindspotlab.xyz](https://blindspotlab.xyz)
+
+---
+
+## Ownership and licence
+
+Revel is **A BlindspotLab Product**, owned and operated by **BlindspotLab
+Limited**.
+
+The software is licensed under the **Apache License, Version 2.0** — see
+[LICENSE](LICENSE).
+
+The Apache licence covers the software only. The **Revel** and **BlindspotLab**
+names, logos and visual identity are trademarks of BlindspotLab Limited and are
+**not** licensed under Apache-2.0. See [NOTICE](NOTICE) for trademark terms and
+third-party attribution.
+
+---
+
+## Contributing and development
+
+Development setup, environment configuration, database migrations and
+deployment live in **[docs/development.md](docs/development.md)**, not here.

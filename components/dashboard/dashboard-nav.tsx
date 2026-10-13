@@ -17,6 +17,7 @@ const baseNavItems = [
 
 const adminNavItems = [
   { label: "Analytics", href: "/mission-control/analytics" },
+  { label: "AI Usage", href: "/mission-control/ai-usage" },
   { label: "Partners", href: "/mission-control/partners" },
 ];
 

@@ -1,4 +1,3 @@
-import { after } from "next/server";
 import { NextResponse } from "next/server";
 import { runWithActivityContext } from "@/lib/activity-context";
 import { trackActivity } from "@/lib/activity";
@@ -16,7 +15,6 @@ import { partnerRateLimit } from "@/lib/partner-rate-limit";
 import { linkPartnerAnalysis } from "@/lib/partners";
 import { startWebsiteAnalysis } from "@/lib/mcp/handlers";
 import { normalizeUrlSafe } from "@/lib/validation";
-import { markAnalysisFailed, runAnalysis } from "@/services/analysis-runner";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -116,15 +114,10 @@ export async function POST(request: Request) {
           },
         });
 
-        after(async () => {
-          await runWithActivityContext({ source: "partner_api" }, async () => {
-            try {
-              await runAnalysis(started.analysisId, website);
-            } catch (error) {
-              await markAnalysisFailed(started.analysisId, error, { website });
-            }
-          });
-        });
+        // `startWebsiteAnalysis` already schedules the run via `after()`.
+        // Scheduling it again here executed the whole AI pipeline twice for
+        // every partner request — double provider spend and a write race on
+        // the same analysis row.
 
         return applyCors(
           NextResponse.json({

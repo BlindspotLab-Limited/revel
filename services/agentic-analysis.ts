@@ -3,28 +3,44 @@ import {
   isRateLimitError,
   isRecoverableAgenticFailure,
 } from "@/lib/analysis-provider";
+import { getEvidenceStore } from "@/lib/audit/evidence-context";
 import { generateAnalysis } from "@/lib/openrouter";
+import { isDeadlineError } from "@/lib/resilient-fetch";
 import {
   logServerError,
   serverErrorDetail,
   throwClientAiGatewayError,
 } from "@/lib/safe-client-error";
 import type { AnalysisReport } from "@/types/analysis";
-import { extractWebsiteContent } from "@/services/content-extractor";
+import {
+  evidenceToPromptText,
+  fetchPageEvidence,
+} from "@/services/content-extractor";
 import { runGeminiAgent } from "@/services/gemini-agent";
 import { runGroqAgent } from "@/services/groq-agent";
+import { runNvidiaAgent } from "@/services/nvidia-agent";
 
-async function fetchContentForFallback(website: string): Promise<string> {
-  try {
-    return await extractWebsiteContent(website);
-  } catch (error) {
-    logServerError("openrouter_fetch_failed", error, { website });
-    return [
-      `[Live page fetch failed]`,
-      `Website URL: ${website}`,
-      "Only use the domain and URL structure. Mark every blindspot as unverified live content.",
-    ].join("\n\n");
+/**
+ * Fetch the homepage for the single-shot (OpenRouter) path.
+ *
+ * Previously, a failed fetch returned a synthesized placeholder telling the
+ * model to "only use the domain and URL structure", and an audit was then
+ * produced from the domain name alone. That is a fabricated report, so a fetch
+ * failure now aborts this backend and the cascade moves on.
+ */
+async function fetchContentForSingleShot(website: string): Promise<string> {
+  const evidence = await fetchPageEvidence(website);
+  getEvidenceStore()?.record(evidence);
+
+  if (evidence.outcome !== "ok") {
+    throw new Error(
+      `openrouter: live page fetch failed (${evidence.outcome}${
+        evidence.httpStatus ? ` HTTP ${evidence.httpStatus}` : ""
+      }) — refusing to audit from the domain name alone`
+    );
   }
+
+  return evidenceToPromptText(evidence);
 }
 
 async function runOpenRouterAnalysis(website: string): Promise<AnalysisReport> {
@@ -33,10 +49,14 @@ async function runOpenRouterAnalysis(website: string): Promise<AnalysisReport> {
 
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
-      const content = await fetchContentForFallback(website);
+      const content = await fetchContentForSingleShot(website);
       return await generateAnalysis(website, content);
     } catch (error) {
       lastError = error;
+
+      // A spent audit budget is terminal — do not burn the remaining time.
+      if (isDeadlineError(error)) break;
+
       if (attempt < attempts - 1) {
         await new Promise((resolve) => setTimeout(resolve, 3000));
       }
@@ -53,8 +73,11 @@ async function runOpenRouterAnalysis(website: string): Promise<AnalysisReport> {
 
 /**
  * Run analysis with cascade:
- *   Groq (agentic) → OpenRouter (grounded single-shot) → Gemini (agentic, last)
- * On recoverable errors, try the next backend. Client only ever sees a generic message.
+ *   Groq (agentic) → OpenRouter (grounded single-shot) → Gemini (agentic)
+ *   → NVIDIA (agentic, only when NVIDIA_ENABLE_FALLBACK=true)
+ *
+ * On recoverable errors, try the next backend. Client only ever sees a generic
+ * message. The caller is responsible for scoping an evidence store.
  */
 export async function generateAgenticAnalysis(
   website: string
@@ -87,11 +110,24 @@ export async function generateAgenticAnalysis(
       if (provider === "openrouter") {
         return await runOpenRouterAnalysis(website);
       }
+      if (provider === "nvidia") {
+        return await runNvidiaAgent(website);
+      }
       return await runGeminiAgent(website);
     } catch (error) {
       // Prefer serverDetail so ClientSafeError does not collapse to the public message
       const detail = serverErrorDetail(error);
       errors.push({ provider, detail });
+
+      // The total audit budget is shared across the whole cascade. Once it is
+      // gone, trying another provider cannot finish either.
+      if (isDeadlineError(error)) {
+        logServerError("analysis_budget_exhausted", detail, {
+          website,
+          provider,
+        });
+        break;
+      }
 
       const canFallback =
         !isLast &&
