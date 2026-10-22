@@ -121,7 +121,7 @@ async function main() {
     console.log("");
     if (jsOk) {
       console.log("Database OK for local dev (Supabase JS over HTTPS).");
-      console.log("Prisma runs on Vercel production. Use --postgres to test direct ports.");
+      console.log("Prisma runs in production (Cloudflare Hyperdrive). Use --postgres to test direct ports.");
       return 0;
     }
 
@@ -139,7 +139,7 @@ async function main() {
 
   if (jsOk) {
     console.log("Postgres ports blocked locally, but Supabase JS works over HTTPS.");
-    console.log("Local dev will use Supabase JS. Prisma activates on Vercel production.");
+    console.log("Local dev will use Supabase JS. Prisma activates in production (Cloudflare Hyperdrive).");
     return 0;
   }
 

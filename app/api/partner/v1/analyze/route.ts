@@ -17,6 +17,9 @@ import { startWebsiteAnalysis } from "@/lib/mcp/handlers";
 import { normalizeUrlSafe } from "@/lib/validation";
 
 export const runtime = "nodejs";
+// Ignored on Cloudflare Workers (no wall-clock limit; audits run in a
+// Workflow). Kept only while Vercel remains the rollback target — see
+// docs/cloudflare-deployment.md → "Remove Vercel safely".
 export const maxDuration = 300;
 
 const corsHeaders = {
@@ -50,6 +53,17 @@ export async function POST(request: Request) {
     );
   }
 
+  // Rate-limit before reserving a credit, so a 429 never consumes one.
+  const { success } = await partnerRateLimit(partner.id);
+  if (!success) {
+    return applyCors(
+      NextResponse.json(
+        { error: "Rate limit exceeded. Try again in a minute." },
+        { status: 429 }
+      )
+    );
+  }
+
   if (billing.mode === "credits") {
     const reserved = await reservePartnerCredit(partner.id);
     if (!reserved) {
@@ -64,16 +78,6 @@ export async function POST(request: Request) {
         )
       );
     }
-  }
-
-  const { success } = partnerRateLimit(partner.id);
-  if (!success) {
-    return applyCors(
-      NextResponse.json(
-        { error: "Rate limit exceeded. Try again in a minute." },
-        { status: 429 }
-      )
-    );
   }
 
   let body: { url?: string };

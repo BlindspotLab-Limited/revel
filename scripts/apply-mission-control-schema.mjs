@@ -69,7 +69,8 @@ Apply schema manually:
   2. Paste contents of supabase/schema.sql
   3. Run
 
-Production/Vercel can reach the DB — prisma migrate deploy works there.
+Apply migrations from a network that can reach the DB (or the SQL Editor).
+Production never runs migrations automatically.
 
 SQL file: supabase/schema.sql
 `);

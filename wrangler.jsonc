@@ -1,0 +1,82 @@
+{
+  // Revel — Cloudflare Workers configuration (OpenNext adapter).
+  // Full guide: docs/cloudflare-deployment.md
+  //
+  // This file holds NO account-specific values. The Hyperdrive id is injected
+  // at build time from the CLOUDFLARE_HYPERDRIVE_ID build variable by
+  // scripts/cloudflare/build.mjs, which writes the git-ignored
+  // wrangler.deploy.jsonc used by the build and deploy commands.
+  "$schema": "node_modules/wrangler/config-schema.json",
+
+  // Must match the Worker name created in the Cloudflare dashboard.
+  "name": "revel",
+  "main": "cloudflare/worker.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+
+  "services": [
+    // Self-reference used by OpenNext, the audit Workflow and the cron
+    // handler. Must match "name" above.
+    { "binding": "WORKER_SELF_REFERENCE", "service": "revel" }
+  ],
+
+  // Durable audit execution. Created automatically on deploy.
+  "workflows": [
+    {
+      "name": "revel-audit",
+      "binding": "AUDIT_WORKFLOW",
+      "class_name": "AuditWorkflow"
+    }
+  ],
+
+  // Shared rate limits across isolates (Workers Rate Limiting API). Created
+  // automatically on deploy. namespace_id is any integer unique within the
+  // Cloudflare account; it is not a secret and not a provisioned resource.
+  "ratelimits": [
+    {
+      "name": "AUDIT_RATE_LIMITER",
+      "namespace_id": "47001",
+      "simple": { "limit": 5, "period": 60 }
+    },
+    {
+      "name": "PARTNER_RATE_LIMITER",
+      "namespace_id": "47002",
+      "simple": { "limit": 30, "period": 60 }
+    }
+  ],
+
+  // Daily IndexNow re-index at 06:00 UTC (was a Vercel cron).
+  "triggers": {
+    "crons": ["0 6 * * *"]
+  },
+
+  // Next.js image optimisation (AVIF/WebP) through Cloudflare Images.
+  "images": {
+    "binding": "IMAGES"
+  },
+
+  // An audit makes several minutes of provider calls; most of it is I/O
+  // wait, but evidence parsing and report normalisation need headroom
+  // beyond the 30s default CPU limit. Requires the Workers Paid plan.
+  "limits": {
+    "cpu_ms": 300000
+  },
+
+  // Workers Logs: required to debug deployments from the dashboard.
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+
+  // Keep runtime variables and secrets that were set in the dashboard when
+  // a new version is deployed from GitHub.
+  "keep_vars": true
+
+  // "hyperdrive" is added by scripts/cloudflare/build.mjs:
+  //   [{ "binding": "HYPERDRIVE", "id": "<CLOUDFLARE_HYPERDRIVE_ID>" }]
+}

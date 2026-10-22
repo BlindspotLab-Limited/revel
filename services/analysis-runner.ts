@@ -38,7 +38,7 @@ export async function markAnalysisFailed(
   if (!failed) return;
 
   const website = context?.website ?? failed.website;
-  // Real reason for Vercel logs (never the generic client string alone)
+  // Real reason for server logs (never the generic client string alone)
   const detail = serverErrorDetail(error);
 
   logServerError("analysis_failed", detail, {

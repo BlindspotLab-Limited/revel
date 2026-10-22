@@ -4,7 +4,7 @@ import { createRevelMcpServer } from "@/lib/mcp/create-server";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 
 /**
- * Stateless Streamable HTTP handler for Next.js / Vercel.
+ * Stateless Streamable HTTP handler for Next.js (Cloudflare Workers / Node).
  * Creates a fresh transport + server per request (serverless-safe).
  */
 export async function handleMcpHttpRequest(

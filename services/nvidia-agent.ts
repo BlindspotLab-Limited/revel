@@ -18,7 +18,7 @@ import { runOpenAiCompatibleAgent } from "@/services/openai-compatible-agent";
  * `chat_template_kwargs` (`enable_thinking`, `low_effort`), not a top-level
  * `reasoning_effort` field. Reasoning defaults to ON upstream; Revel defaults
  * it OFF (NVIDIA_REASONING=off) because reasoning traces must never reach a
- * customer report and they consume latency the Vercel budget cannot spare.
+ * customer report and they consume latency the audit budget cannot spare.
  * Any `reasoning_content` the model does return is dropped by the shared agent
  * loop and never enters the report or the stored transcript.
  */

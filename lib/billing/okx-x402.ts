@@ -18,7 +18,7 @@ export const OKX_X402_NETWORK = "eip155:196" as const;
 export const OKX_USDT0_ADDRESS =
   "0x779ded0c9e1022225f8e0630b35a9b54be713736";
 
-/** Default launch price — covers LLM fallback + Vercel + maintenance margin */
+/** Default launch price — covers LLM fallback + hosting + maintenance margin */
 export const DEFAULT_OKX_AUDIT_PRICE_USD = 0.35;
 
 let resourceServer: x402ResourceServer | null = null;

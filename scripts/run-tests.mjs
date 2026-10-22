@@ -6,7 +6,14 @@ import { join, relative, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const ROOT = process.cwd();
-const SKIP = new Set(["node_modules", ".next", ".git", "generated"]);
+const SKIP = new Set([
+  "node_modules",
+  ".next",
+  ".open-next",
+  ".wrangler",
+  ".git",
+  "generated",
+]);
 
 function findTests(dir, found = []) {
   for (const entry of readdirSync(dir)) {

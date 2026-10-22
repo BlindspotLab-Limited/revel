@@ -262,3 +262,8 @@ third-party attribution.
 
 Development setup, environment configuration, database migrations and
 deployment live in **[docs/development.md](docs/development.md)**, not here.
+
+Revel is hosted on **Cloudflare Workers** (OpenNext adapter, Hyperdrive in
+front of the existing Supabase Postgres, Cloudflare Workflows for audits).
+The dashboard-only deployment guide is
+**[docs/cloudflare-deployment.md](docs/cloudflare-deployment.md)**.

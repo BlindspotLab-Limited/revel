@@ -1,12 +1,11 @@
-import { after } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { trackActivity } from "@/lib/activity";
 import { getOkxBillingManifest } from "@/lib/billing/okx-x402";
 import { getMcpUsageSummary } from "@/lib/mcp/usage-model";
 import { getExportCapabilities } from "@/lib/mission-control-config";
 import { normalizeUrlSafe } from "@/lib/validation";
-import { markAnalysisFailed, runAnalysis } from "@/services/analysis-runner";
 import { executeAgentTool } from "@/services/agent-tools";
+import { dispatchAnalysis } from "@/services/audit-dispatch";
 import {
   exportToJson,
   exportToMarkdown,
@@ -19,23 +18,6 @@ const POLL_INTERVAL_MS = 3_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** Vercel-safe background work (stdio falls back to fire-and-forget). */
-function scheduleAnalysis(id: string, website: string): void {
-  const task = async () => {
-    try {
-      await runAnalysis(id, website);
-    } catch (error) {
-      await markAnalysisFailed(id, error, { website });
-    }
-  };
-
-  try {
-    after(task);
-  } catch {
-    void task();
-  }
 }
 
 export function getRevelMcpHealth() {
@@ -62,7 +44,9 @@ export async function startWebsiteAnalysis(url: string) {
     createdAt: new Date().toISOString(),
   });
 
-  scheduleAnalysis(id, website);
+  // Durable background run: Cloudflare Workflow on Workers, `after()` on
+  // Node (stdio MCP falls back to fire-and-forget).
+  await dispatchAnalysis({ analysisId: id, website });
   trackActivity({
     eventType: "analysis_started",
     analysisId: id,

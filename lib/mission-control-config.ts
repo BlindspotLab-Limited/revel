@@ -1,3 +1,5 @@
+import { isPrismaEnabled } from "@/lib/prisma";
+
 export type ExportFormat =
   | "markdown"
   | "json"
@@ -10,9 +12,8 @@ export function getActiveStorageBackend():
   | "supabase"
   | "file"
   | "none" {
-  const prismaEnabled = !!(
-    process.env.DATABASE_URL && process.env.DIRECT_URL
-  );
+  // Hyperdrive on Cloudflare Workers; DATABASE_URL + DIRECT_URL on Node.
+  const prismaEnabled = isPrismaEnabled();
 
   if (prismaEnabled && process.env.NODE_ENV === "production") {
     return "prisma";
@@ -22,7 +23,8 @@ export function getActiveStorageBackend():
     return "supabase";
   }
 
-  if (process.env.VERCEL === "1") {
+  // No local JSON store in production (see services/store.ts).
+  if (process.env.NODE_ENV === "production") {
     return "none";
   }
 

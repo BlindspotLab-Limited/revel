@@ -88,7 +88,7 @@ export const REVEL_MCP_USAGE = {
       mid: 0.35,
       high: 0.5,
     },
-    note: "$0.35/audit default (env OKX_AUDIT_PRICE_USD). Covers Groq/OpenRouter (~$0.02–0.08), Vercel compute, and maintenance. $0.20 is viable only on Groq free tier; $0.50 is safer long-term margin.",
+    note: "$0.35/audit default (env OKX_AUDIT_PRICE_USD). Covers Groq/OpenRouter (~$0.02–0.08), hosting compute, and maintenance. $0.20 is viable only on Groq free tier; $0.50 is safer long-term margin.",
   },
 } as const;
 

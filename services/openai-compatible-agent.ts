@@ -301,8 +301,8 @@ export async function runOpenAiCompatibleAgent(
   const target = getAuditPageTarget();
   const maxSteps = getAgentMaxSteps();
 
-  // Total audit budget — keeps the run inside the Vercel function limit so a
-  // result is always persisted rather than the record being stranded.
+  // Total audit budget — keeps the run well inside the Workflow step timeout
+  // so a result is always persisted rather than the record being stranded.
   const budgetController = new AbortController();
   const budgetTimer = setTimeout(
     () => budgetController.abort(),

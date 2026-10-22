@@ -5,13 +5,14 @@ codebase. Product documentation for Revel's users lives in
 [../README.md](../README.md).
 
 **No secret value belongs in this file.** Only variable *names* are listed.
-Real values go in `.env.local` (git-ignored) or the Vercel project settings.
+Real values go in `.env.local` (git-ignored) or the Cloudflare Worker's
+settings (see [cloudflare-deployment.md](cloudflare-deployment.md)).
 
 ---
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 22+ (pinned in `.node-version`)
 - Accounts as needed: [Groq](https://console.groq.com) or
   [Google AI Studio](https://aistudio.google.com),
   [OpenRouter](https://openrouter.ai),
@@ -42,7 +43,13 @@ Configure Google OAuth and set `AUTH_SECRET` / `NEXTAUTH_*` / `GOOGLE_*` in
 | Command | Purpose |
 |---------|---------|
 | `npm run dev` | Dev server (webpack) |
-| `npm run build` | Production build (+ IndexNow ping on Vercel) |
+| `npm run build` | Next.js production build for Node.js (`next start`) |
+| `npm run build:cloudflare` | Cloudflare Workers build (OpenNext) — the Workers Builds build command |
+| `npm run deploy:cloudflare` | Deploy the built Worker — the Workers Builds deploy command |
+| `npm run upload:cloudflare` | Upload a Worker version without promoting it |
+| `npm run preview:cloudflare` | Build and run the Worker locally in `workerd` |
+| `npm run test:cloudflare` | Workers runtime compatibility tests (local `workerd`) |
+| `npm run typecheck:cloudflare` | Type-check the Worker entry and Workflow |
 | `npm test` | Run every `*.test.ts` via tsx |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | Next lint |
@@ -53,7 +60,7 @@ Configure Google OAuth and set `AUTH_SECRET` / `NEXTAUTH_*` / `GOOGLE_*` in
 | `npm run test:mcp:http` | Exercise the MCP HTTP transport |
 | `npm run verify:okx-billing` | Check the OKX payment SDK wiring |
 | `npm run generate:brand-icons` | Regenerate favicon / PWA icons |
-| `npm run indexnow:ping` | Manually ping Bing/IndexNow |
+| `npm run indexnow:ping` | Manually ping Bing/IndexNow (never runs on build) |
 
 ## Tests
 
@@ -72,6 +79,20 @@ npm test
 | `lib/billing/payout-config.test.ts` | Payout address/network validation |
 | `lib/mcp/payment-gate.test.ts` | Which MCP methods require x402 payment |
 | `lib/report-schema.quality.test.ts` | Report normalisation and quality gates |
+| `lib/audit/internal-token.test.ts` | HMAC tokens for the internal audit-run endpoint, job parsing |
+| `lib/runtime/cloudflare.test.ts` | Hyperdrive client per request, no DB fallback on Workers, rate-limit binding, client IP, `waitUntil` |
+| `services/audit-dispatch.test.ts` | Workflow dispatch, duplicate protection, internal run endpoint, stale-run close-out, no JSON store in production |
+| `lib/billing/x402-paywall.test.ts` | Real `/api/audit` + `/api/mcp` handlers return the x402 402 challenge (facilitator mocked, no payment) |
+| `lib/billing/x402-fail-closed.test.ts` | Paid routes answer 503 when billing is missing or rejected |
+| `scripts/cloudflare/wrangler-config.test.ts` | `wrangler.jsonc` contract and Hyperdrive id injection |
+
+Cloudflare runtime tests (`npm run test:cloudflare`) bundle a probe with
+Wrangler and run it in `workerd`: tokens encrypted by Node.js must decrypt,
+OAuth state / bcrypt / key hashes must match, AsyncLocalStorage, the OKX
+HMAC signer and the MCP transport must work. With `TEST_DATABASE_URL`
+(a throwaway Postgres with the schema applied — never production) and a
+prior `build:cloudflare`, it also starts the real Worker and runs
+`scripts/cloudflare/smoke-test.mjs --write` plus the cron trigger.
 
 ---
 
@@ -86,14 +107,15 @@ Names only. Copy `.env.example` to `.env.local` and fill it in.
 | NVIDIA | `NVIDIA_API_KEY`, `NVIDIA_BASE_URL`, `NVIDIA_MODEL`, `NVIDIA_MODEL_FALLBACK`, `NVIDIA_REASONING`, `NVIDIA_MAX_OUTPUT_TOKENS`, `NVIDIA_PRIMARY` |
 | Analysis policy | `ANALYSIS_MODE`, `ANALYSIS_PROVIDER`, `AGENT_MAX_STEPS`, `AUDIT_MIN_PAGES`, `AUDIT_MAX_PAGES`, `AUDIT_BUDGET_MS`, `PROVIDER_REQUEST_TIMEOUT_MS`, `PROVIDER_MAX_RETRIES` |
 | Auth | `AUTH_SECRET`, `NEXTAUTH_SECRET`, `AUTH_URL`, `NEXTAUTH_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
-| Database | `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `USE_PRISMA_LOCAL` |
+| Database (local / Node) | `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `USE_PRISMA_LOCAL` |
+| Cloudflare build | `CLOUDFLARE_HYPERDRIVE_ID` (build variable), `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` (local preview only) |
 | Admin | `REVEL_ADMIN_EMAILS` |
 | Usage | `WEEKLY_AUDIT_LIMIT` |
 | MCP | `MCP_API_KEY` |
 | OKX billing | `OKX_API_KEY`, `OKX_SECRET_KEY`, `OKX_PASSPHRASE`, `OKX_AUDIT_PRICE_USD` |
 | Payout | `OKX_PAY_TO`, `OKX_PAY_NETWORK`, `OKX_PAY_ASSET`, `OKX_PAY_ASSET_SYMBOL`, `OKX_PAY_ASSET_DECIMALS` |
 | Email | `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `REVEL_ADMIN_NOTIFY_EMAIL` |
-| SEO | `GOOGLE_SITE_VERIFICATION`, `BING_SITE_VERIFICATION`, `YANDEX_SITE_VERIFICATION`, `INDEXNOW_KEY`, `INDEXNOW_SECRET`, `CRON_SECRET` |
+| SEO | `GOOGLE_SITE_VERIFICATION`, `BING_SITE_VERIFICATION`, `YANDEX_SITE_VERIFICATION`, `INDEXNOW_KEY`, `INDEXNOW_SECRET`, `CRON_SECRET`, `INDEXNOW_DISABLED` |
 | Analytics | `NEXT_PUBLIC_PLAUSIBLE_DOMAIN` |
 | Export OAuth | `LINEAR_CLIENT_ID`, `LINEAR_CLIENT_SECRET`, `NOTION_CLIENT_ID`, `NOTION_CLIENT_SECRET`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `INTEGRATIONS_ENCRYPTION_KEY` |
 
@@ -155,9 +177,21 @@ Supabase-SQL equivalents for the same changes live in `supabase/`.
 Apply locally:
 
 ```bash
-npx prisma migrate deploy      # applies pending migrations
-npx prisma generate            # regenerate the client
+npx prisma migrate deploy      # applies pending migrations (uses DIRECT_URL)
+npx prisma generate            # regenerate both clients
 ```
+
+`prisma generate` writes two clients from the one schema:
+`lib/generated/prisma` (Node.js runtime — dev, scripts, `next start`) and
+`lib/generated/prisma-workerd` (`runtime = "workerd"`, which loads the
+query compiler as a pre-compiled WASM module; Workers forbid compiling
+WASM at runtime). The Cloudflare build aliases
+`@/lib/generated/prisma/client` to the workerd client.
+
+At runtime `lib/prisma.ts` connects through the Cloudflare Hyperdrive
+binding `HYPERDRIVE` on Workers — a new client per request, `maxUses: 1`,
+no fallback to `DATABASE_URL` — and through `DATABASE_URL` / `DIRECT_URL`
+on Node.js.
 
 Against Supabase, run the matching file from `supabase/` in the SQL Editor.
 
@@ -172,9 +206,13 @@ machine against production.
 ### Audit pipeline
 
 ```
-POST /api/analyze  (or MCP tools/call, or /api/partner/v1/analyze)
+POST /api/analyze  (or MCP tools/call, /api/audit, /api/partner/v1/analyze)
   → saveAnalysis(status: processing)
-  → after()  ← Vercel-supported background work; NOT a dangling promise
+  → dispatchAnalysis()                       services/audit-dispatch.ts
+      Workers: AUDIT_WORKFLOW.create({ id: analysisId })   (durable)
+               → AuditWorkflow step "run-audit"            cloudflare/audit-workflow.ts
+               → POST /api/internal/audit-run (HMAC token, WORKER_SELF_REFERENCE)
+      Node.js: after()   (next dev / next start / stdio MCP)
       → runAnalysis()
           → AuditEvidenceStore scoped per run (AsyncLocalStorage)
           → provider cascade (agentic tool loop or single-shot)
@@ -185,6 +223,17 @@ POST /api/analyze  (or MCP tools/call, or /api/partner/v1/analyze)
 `startWebsiteAnalysis()` in `lib/mcp/handlers.ts` **already schedules the run**.
 Do not schedule `runAnalysis` again at the call site — doing so executes the
 whole pipeline twice.
+
+Durability rules: the Workflow instance id is the analysis id (a second
+dispatch is refused); the run endpoint skips analyses already in a terminal
+state; provider/site failures are persisted as `failed` without a retry; only
+infrastructure failures (5xx) retry once; a final step marks the analysis
+`failed`; and `getAnalysis()` closes out anything still `processing` after
+30 minutes. Credits and x402 payments are settled before dispatch.
+
+Side work that must outlive the response (activity events, emails, partner
+key `lastUsedAt`) goes through `runInBackground()` (`ctx.waitUntil` on
+Workers) — never a bare `void promise`.
 
 ### Key modules
 
@@ -209,16 +258,20 @@ is optional on read.
 
 ---
 
-## Deployment (Vercel)
+## Deployment (Cloudflare Workers)
 
-Revel deploys to Vercel. Hosting is not to be migrated.
+Revel is hosted on **Cloudflare Workers** via the OpenNext adapter, deployed
+by Cloudflare Workers Builds from the `main` branch. The step-by-step,
+dashboard-only guide is **[cloudflare-deployment.md](cloudflare-deployment.md)**.
 
-- `vercel.json` sets `maxDuration: 300` for `/api/analyze`, `/api/mcp` and `/api/audit`, and region `iad1`.
-- Background work uses `after()` from `next/server`, which Vercel supports; it keeps the invocation alive. `AUDIT_BUDGET_MS` (default 240s) keeps a run inside that window so a terminal state is always persisted.
-- Long-running audits must be started and polled, not awaited in one HTTP request.
-
-Release steps, rollback and the production checklist are tracked per release,
-not in this file.
+- Config: `wrangler.jsonc` (no account-specific values). The Hyperdrive id
+  comes from the `CLOUDFLARE_HYPERDRIVE_ID` build variable; the build writes
+  the git-ignored `wrangler.deploy.jsonc`.
+- Entry: `cloudflare/worker.ts` wraps the OpenNext worker and adds the
+  `AuditWorkflow` export and the `0 6 * * *` IndexNow cron.
+- Database: existing Supabase Postgres through Hyperdrive. Builds and
+  deploys never run migrations.
+- `npm run build` / `next start` still produce a working Node.js server.
 
 ---
 

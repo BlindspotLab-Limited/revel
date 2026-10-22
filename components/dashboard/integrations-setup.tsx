@@ -43,10 +43,10 @@ export function IntegrationsSetup() {
         <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-muted">
           <li>
             Env vars are set on{" "}
-            <strong className="text-foreground">Vercel → Project → Settings → Environment Variables</strong>{" "}
-            (Production).
+            <strong className="text-foreground">Cloudflare → Workers &amp; Pages → revel → Settings → Variables and Secrets</strong>{" "}
+            (as Secrets).
           </li>
-          <li>Redeploy after adding or changing variables.</li>
+          <li>Select Deploy after adding or changing variables.</li>
           <li>
             Exports run from any completed report —{" "}
             <Link href="/mission-control" className="text-primary hover:underline">
@@ -57,11 +57,11 @@ export function IntegrationsSetup() {
         </ol>
         <Button asChild variant="secondary" size="sm" className="mt-4">
           <a
-            href="https://vercel.com/docs/projects/environment-variables"
+            href="https://developers.cloudflare.com/workers/configuration/secrets/"
             target="_blank"
             rel="noopener noreferrer"
           >
-            Vercel env vars docs
+            Cloudflare secrets docs
           </a>
         </Button>
       </div>

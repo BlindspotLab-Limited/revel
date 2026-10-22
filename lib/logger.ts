@@ -17,7 +17,7 @@ export function logEvent(
     ...data,
   };
 
-  // Always single-line JSON so Vercel Runtime Logs show full fields (not [Object])
+  // Always single-line JSON so Cloudflare Workers Logs show full fields (not [Object])
   const line = JSON.stringify(entry);
   if (event === "analysis_failed") {
     console.error(line);

@@ -17,7 +17,10 @@
     "verify:okx-billing": "node scripts/verify-okx-payment-sdk.mjs",
     "dev:turbo": "next dev --turbopack",
     "build": "next build",
-    "postbuild": "node scripts/indexnow-ping.mjs",
+    "build:cloudflare": "node scripts/cloudflare/build.mjs",
+    "deploy:cloudflare": "node scripts/cloudflare/deploy.mjs",
+    "upload:cloudflare": "node scripts/cloudflare/deploy.mjs upload",
+    "preview:cloudflare": "node scripts/cloudflare/build.mjs && opennextjs-cloudflare preview --config wrangler.deploy.jsonc",
     "indexnow:ping": "node scripts/indexnow-ping.mjs --force",
     "start": "next start",
     "lint": "next lint",
@@ -34,6 +37,8 @@
     "postinstall": "prisma generate",
     "test": "node scripts/run-tests.mjs",
     "typecheck": "tsc --noEmit",
+    "typecheck:cloudflare": "wrangler types cloudflare/worker-configuration.d.ts --include-env=false && tsc -p cloudflare/tsconfig.json",
+    "test:cloudflare": "node scripts/cloudflare/test-runtime.mjs",
     "okx:validate": "node scripts/validate-revel-listing.mjs",
     "okx:submit": "node scripts/create-revel-asp.mjs"
   },
@@ -42,6 +47,7 @@
     "@okxweb3/app-x402-core": "^0.2.0",
     "@okxweb3/app-x402-evm": "^0.2.0",
     "@okxweb3/app-x402-next": "^0.2.0",
+    "@opennextjs/cloudflare": "^1.20.12",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@radix-ui/react-accordion": "^1.2.3",
@@ -56,7 +62,7 @@
     "dotenv": "^17.4.2",
     "framer-motion": "^12.0.0",
     "lucide-react": "^0.475.0",
-    "next": "^16.2.10",
+    "next": "^16.4.2",
     "next-auth": "^5.0.0-beta.31",
     "pg": "^8.22.0",
     "react": "^19.0.0",
@@ -75,12 +81,16 @@
     "@types/react-dom": "^19.0.0",
     "@types/uuid": "^10.0.0",
     "eslint": "^9.0.0",
-    "eslint-config-next": "^16.2.10",
+    "eslint-config-next": "^16.4.2",
     "playwright": "^1.61.1",
     "prisma": "^7.8.0",
     "sharp": "^0.35.3",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.23.1",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "wrangler": "^4.151.0"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

@@ -1,5 +1,6 @@
 import { extractPartnerApiKey, hashPartnerApiKey } from "@/lib/partner-keys";
 import { getPrisma } from "@/lib/prisma";
+import { runInBackground } from "@/lib/runtime/cloudflare";
 
 export type PartnerAccessType = "paid" | "whitelisted" | "trial";
 export type PartnerStatus = "pending" | "active" | "suspended";
@@ -38,10 +39,12 @@ export async function authenticatePartnerRequest(
 
   if (!record?.partner) return null;
 
-  void prisma.partnerApiKey.update({
-    where: { id: record.id },
-    data: { lastUsedAt: new Date() },
-  });
+  runInBackground(
+    prisma.partnerApiKey.update({
+      where: { id: record.id },
+      data: { lastUsedAt: new Date() },
+    })
+  );
 
   const partner = record.partner;
   return {

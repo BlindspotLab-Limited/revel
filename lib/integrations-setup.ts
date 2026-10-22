@@ -50,13 +50,13 @@ export const integrationGuides: IntegrationGuide[] = [
         code: "Scopes: gist",
       },
       {
-        title: "Add to Vercel",
-        body: "In your Revel project on Vercel → Settings → Environment Variables, add:",
+        title: "Add to Cloudflare",
+        body: "In the Cloudflare dashboard → Workers & Pages → revel → Settings → Variables and Secrets, add a Secret:",
         code: "GITHUB_TOKEN=ghp_xxxxxxxx",
       },
       {
-        title: "Redeploy",
-        body: "Redeploy production (or wait for the next deploy). The Export panel will enable the GitHub Gist button.",
+        title: "Deploy",
+        body: "Select Deploy to publish the new secret (or wait for the next deploy). The Export panel will enable the GitHub Gist button.",
       },
     ],
     verify:
@@ -91,13 +91,13 @@ export const integrationGuides: IntegrationGuide[] = [
         code: "LINEAR_TEAM_ID=<team-uuid>",
       },
       {
-        title: "Add env vars on Vercel",
-        body: "Add both variables to Vercel → Settings → Environment Variables → Production:",
+        title: "Add secrets on Cloudflare",
+        body: "Add both as Secrets under Cloudflare → Workers & Pages → revel → Settings → Variables and Secrets:",
         code: "LINEAR_API_KEY=lin_api_xxxxxxxx\nLINEAR_TEAM_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
       },
       {
-        title: "Redeploy",
-        body: "Trigger a production redeploy so the API route picks up the new keys.",
+        title: "Deploy",
+        body: "Select Deploy so the API route picks up the new keys.",
       },
       {
         title: "Export from a report",
@@ -149,13 +149,13 @@ export const integrationGuides: IntegrationGuide[] = [
         code: "NOTION_DATABASE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
       },
       {
-        title: "Add env vars on Vercel",
-        body: "Add to Vercel production environment:",
+        title: "Add secrets on Cloudflare",
+        body: "Add as Secrets under Cloudflare → Workers & Pages → revel → Settings → Variables and Secrets:",
         code: "NOTION_API_KEY=secret_xxxxxxxx\nNOTION_DATABASE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nNOTION_TITLE_PROPERTY=Name",
       },
       {
-        title: "Redeploy and export",
-        body: "Redeploy, then on any report use Export Blueprint → Notion. A new page opens with score in the title and markdown content in the body.",
+        title: "Deploy and export",
+        body: "Deploy, then on any report use Export Blueprint → Notion. A new page opens with score in the title and markdown content in the body.",
       },
     ],
     verify:

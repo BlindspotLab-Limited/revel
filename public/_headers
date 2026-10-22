@@ -1,0 +1,13 @@
+# Cloudflare Workers Static Assets response headers.
+# https://developers.cloudflare.com/workers/static-assets/headers/
+# Applies only to files served straight from static assets (public/ and
+# /_next/static). Responses rendered by the app get the same security
+# headers from next.config.ts.
+
+/_next/static/*
+  Cache-Control: public,max-age=31536000,immutable
+
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin

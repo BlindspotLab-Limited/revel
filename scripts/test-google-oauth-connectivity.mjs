@@ -45,7 +45,7 @@ If Google sign-in fails locally with ConnectTimeoutError:
   1. Allow node.exe through Windows Firewall (outbound HTTPS)
   2. Disable VPN or enable split-tunnel for googleapis.com
   3. Add to .env.local: NODE_OPTIONS=--dns-result-order=ipv4first
-  4. Use email/password locally; Google OAuth should work on Vercel production
+  4. Use email/password locally; Google OAuth should work in production (Cloudflare Workers)
 `);
   process.exitCode = 1;
 }

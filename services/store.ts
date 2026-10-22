@@ -22,7 +22,8 @@ import {
 
 function usePrisma(): boolean {
   // Direct Postgres (5432/6543) is often blocked on local networks.
-  // Supabase JS over HTTPS works locally; Prisma runs on Vercel production.
+  // Supabase JS over HTTPS works locally; Prisma (via Hyperdrive on
+  // Cloudflare Workers) runs in production.
   if (process.env.USE_PRISMA_LOCAL === "true") {
     return isPrismaEnabled();
   }
@@ -34,18 +35,80 @@ function useSupabase(): boolean {
   return isSupabaseEnabled();
 }
 
-/** Local JSON file fallback — not available on Vercel's read-only filesystem. */
+/**
+ * The local JSON file store is a development convenience only. Production
+ * (Cloudflare Workers, or any `NODE_ENV=production` host) has no durable
+ * local filesystem, so it must never silently fall back to it — a missing
+ * database configuration surfaces as an error instead.
+ */
+function isLocalDevelopment(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
+
+/** Local JSON file fallback — development only. */
 function useFileStore(): boolean {
-  if (process.env.VERCEL === "1") return false;
+  if (!isLocalDevelopment()) return false;
   return !usePrisma() && !useSupabase();
 }
 
 /** Mirror full analyses to disk locally so report JSON survives Supabase RLS/upsert gaps. */
 function mirrorFileStore(): boolean {
-  return process.env.VERCEL !== "1";
+  return isLocalDevelopment();
+}
+
+/**
+ * An audit still "processing" after this long cannot finish any more: the
+ * run budget is AUDIT_BUDGET_MS (≤ 280s) and the Cloudflare Workflow gives
+ * up after one retry with a 10-minute step timeout. Anything older lost its
+ * runner (deploy, isolate eviction, platform incident) and is closed out as
+ * failed so polling clients get a terminal answer instead of waiting forever.
+ */
+const STALE_PROCESSING_MS = 30 * 60_000;
+
+export const STALE_PROCESSING_ERROR =
+  "Audit timed out before finishing. Please try again.";
+
+async function reconcileStaleProcessing(analysis: Analysis): Promise<Analysis> {
+  if (analysis.status !== "processing") return analysis;
+
+  const startedAt = new Date(analysis.createdAt).getTime();
+  if (!Number.isFinite(startedAt)) return analysis;
+
+  const age = Date.now() - startedAt;
+  if (age < STALE_PROCESSING_MS) return analysis;
+
+  const failed: Analysis = {
+    ...analysis,
+    status: "failed",
+    error: STALE_PROCESSING_ERROR,
+    completedAt: new Date().toISOString(),
+    durationMs: age,
+  };
+
+  try {
+    await saveAnalysis(failed);
+    console.error(
+      JSON.stringify({
+        level: "error",
+        source: "revel",
+        event: "analysis_failed",
+        reason: "stale_processing",
+        id: analysis.id,
+        ageMs: age,
+      })
+    );
+  } catch {
+    // Still report the terminal state; the next read retries the write.
+  }
+  return failed;
 }
 
 export async function getAnalysis(id: string): Promise<Analysis | null> {
+  const analysis = await readAnalysis(id);
+  return analysis ? reconcileStaleProcessing(analysis) : null;
+}
+
+async function readAnalysis(id: string): Promise<Analysis | null> {
   const canMirror = mirrorFileStore();
 
   const [file, primary] = await Promise.all([

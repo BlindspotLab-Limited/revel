@@ -28,7 +28,7 @@ export function shouldPinCanonicalAuthUrl(): boolean {
   return subdomainRedirectsEnabled() && !isLocalAuthHost();
 }
 
-/** Canonical auth host for OAuth callbacks — never use VERCEL_URL or request host. */
+/** Canonical auth host for OAuth callbacks — never a platform URL or the request host. */
 export function getCanonicalAuthUrl(): string {
   if (shouldPinCanonicalAuthUrl()) {
     return normalizeUrl(siteConfig.authUrl);

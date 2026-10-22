@@ -15,7 +15,15 @@ import {
   getActiveStorageBackend,
   getExportCapabilities,
 } from "@/lib/mission-control-config";
-import { getPrisma, isPrismaEnabled } from "@/lib/prisma";
+import {
+  getDatabaseConnectionKind,
+  getPrisma,
+  isPrismaEnabled,
+} from "@/lib/prisma";
+import {
+  getCloudflareEnv,
+  isCloudflareWorkersRuntime,
+} from "@/lib/runtime/cloudflare";
 import { isSupabaseEnabled } from "@/lib/supabase";
 
 async function checkAnalysisTables(): Promise<{
@@ -46,6 +54,9 @@ async function checkAnalysisTables(): Promise<{
 
 export async function GET() {
   const storage = getActiveStorageBackend();
+  // On Workers audits need the durable Workflow binding to run at all.
+  const auditExecutionReady =
+    !isCloudflareWorkersRuntime() || Boolean(getCloudflareEnv()?.AUDIT_WORKFLOW);
   const tables =
     storage === "prisma" ? await checkAnalysisTables() : { analyses: null, reports: null };
 
@@ -56,12 +67,12 @@ export async function GET() {
   const isAdmin = await getCurrentUserIsAdmin();
   if (process.env.NODE_ENV === "production" && !isAdmin) {
     return NextResponse.json({
-      ok: storage !== "none" && schemaReady,
+      ok: storage !== "none" && schemaReady && auditExecutionReady,
     });
   }
 
   return NextResponse.json({
-    ok: storage !== "none" && schemaReady,
+    ok: storage !== "none" && schemaReady && auditExecutionReady,
     storage,
     schemaReady,
     tables,
@@ -81,7 +92,11 @@ export async function GET() {
     openrouter_fallbacks: process.env.OPENROUTER_MODEL_FALLBACK ?? null,
     database: isPrismaEnabled(),
     supabase: isSupabaseEnabled(),
-    vercel: process.env.VERCEL === "1",
+    runtime: isCloudflareWorkersRuntime() ? "cloudflare-workers" : "nodejs",
+    database_connection: getDatabaseConnectionKind(),
+    audit_workflow: isCloudflareWorkersRuntime()
+      ? Boolean(getCloudflareEnv()?.AUDIT_WORKFLOW)
+      : null,
     exports: getExportCapabilities(),
     migrateHint:
       storage === "prisma" && !schemaReady

@@ -3,6 +3,19 @@ generator client {
   output   = "../lib/generated/prisma"
 }
 
+/// Same client for the Cloudflare Workers runtime: loads the query compiler
+/// as a pre-compiled WASM module (Workers forbid compiling WASM at runtime).
+/// Only the Cloudflare build uses it — next.config.ts aliases
+/// `@/lib/generated/prisma/client` to this output when
+/// REVEL_BUILD_TARGET=cloudflare. Schema, models and migrations are shared.
+generator workerd {
+  provider            = "prisma-client"
+  output              = "../lib/generated/prisma-workerd"
+  runtime             = "workerd"
+  moduleFormat        = "esm"
+  importFileExtension = ""
+}
+
 datasource db {
   provider = "postgresql"
 }

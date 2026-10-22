@@ -1,4 +1,3 @@
-import { after } from "next/server";
 import { NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { runWithActivityContext } from "@/lib/activity-context";
@@ -6,12 +5,15 @@ import { trackActivity } from "@/lib/activity";
 import { getCurrentUserId } from "@/lib/auth";
 import { checkWeeklyAuditLimit } from "@/lib/weekly-audit-limit";
 import { logEvent } from "@/lib/logger";
-import { getRateLimitKey, rateLimit } from "@/lib/rate-limit";
+import { enforceRateLimit, getRateLimitKey } from "@/lib/rate-limit";
 import { normalizeUrlSafe } from "@/lib/validation";
-import { markAnalysisFailed, runAnalysis } from "@/services/analysis-runner";
+import { dispatchAnalysis } from "@/services/audit-dispatch";
 import { saveAnalysis } from "@/services/store";
 
 /** Agentic runs (Groq + fallback) often need 2–3 min on slow networks. */
+// Ignored on Cloudflare Workers (no wall-clock limit; audits run in a
+// Workflow). Kept only while Vercel remains the rollback target — see
+// docs/cloudflare-deployment.md → "Remove Vercel safely".
 export const maxDuration = 300;
 
 export async function POST(request: Request) {
@@ -20,7 +22,11 @@ export async function POST(request: Request) {
   return runWithActivityContext({ source: "website", userId }, async () => {
   try {
     const rateLimitKey = getRateLimitKey(request, userId);
-    const { success } = rateLimit(rateLimitKey, 5, 60_000);
+    const { success } = await enforceRateLimit(`analyze:${rateLimitKey}`, {
+      limit: 5,
+      windowMs: 60_000,
+      binding: "AUDIT_RATE_LIMITER",
+    });
 
     if (!success) {
       return NextResponse.json(
@@ -64,13 +70,8 @@ export async function POST(request: Request) {
       status: "started",
     });
 
-    after(async () => {
-      try {
-        await runAnalysis(id, website, userId);
-      } catch (error) {
-        await markAnalysisFailed(id, error, { website, userId });
-      }
-    });
+    // Durable background run: Cloudflare Workflow on Workers, `after()` on Node.
+    await dispatchAnalysis({ analysisId: id, website, userId });
 
     return NextResponse.json({ id });
   } catch (error) {
