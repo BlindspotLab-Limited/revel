@@ -4,7 +4,8 @@
  *
  *   npm run build:cloudflare
  *
- * 1. Writes wrangler.deploy.jsonc (adds the Hyperdrive id from the
+ * 1. Loads the public `vars` from wrangler.jsonc into the environment and
+ *    writes wrangler.deploy.jsonc (adding the Hyperdrive id from the
  *    CLOUDFLARE_HYPERDRIVE_ID build variable).
  * 2. Generates both Prisma clients (Node.js + workerd runtime).
  * 3. Runs `opennextjs-cloudflare build` (which runs `next build`) with
@@ -13,7 +14,13 @@
  * Never contacts the database and never runs migrations.
  */
 import { spawnSync } from "node:child_process";
-import { DEPLOY_CONFIG, ROOT, isWorkersCi, writeDeployConfig } from "./wrangler-config.mjs";
+import {
+  DEPLOY_CONFIG,
+  ROOT,
+  applyConfigVars,
+  isWorkersCi,
+  writeDeployConfig,
+} from "./wrangler-config.mjs";
 
 function run(command, args, extraEnv = {}) {
   const result = spawnSync(command, args, {
@@ -42,6 +49,17 @@ function warnMissingBuildVariables() {
     }
     console.warn(`${message} (local build: continuing with defaults)`);
   }
+}
+
+// The public values in wrangler.jsonc `vars` (site URLs, subdomain routing)
+// become real environment variables for `next build`, which inlines every
+// NEXT_PUBLIC_* at build time. A build variable set in the Cloudflare
+// dashboard takes precedence, so nothing here overrides the dashboard.
+const fromConfig = applyConfigVars();
+if (fromConfig.length > 0) {
+  console.log(
+    `[cloudflare-build] Loaded from wrangler.jsonc vars: ${fromConfig.join(", ")}`
+  );
 }
 
 warnMissingBuildVariables();

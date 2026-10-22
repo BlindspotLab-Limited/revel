@@ -4,8 +4,10 @@ import path from "node:path";
 import {
   BASE_CONFIG,
   LOCAL_HYPERDRIVE_ID,
+  applyConfigVars,
   buildDeployConfig,
   parseJsonc,
+  readConfigVars,
   resolveHyperdriveId,
 } from "./wrangler-config.mjs";
 
@@ -50,6 +52,45 @@ const worker = readFileSync(path.join(ROOT, "cloudflare/worker.ts"), "utf8");
 assert.match(worker, /export \{ AuditWorkflow \} from "\.\/audit-workflow"/);
 assert.match(worker, /async scheduled\(/);
 assert.match(worker, /"0 6 \* \* \*"/);
+
+// --- public vars ------------------------------------------------------------
+// These are committed, so they must be public, non-account-specific values.
+const vars = readConfigVars();
+for (const name of [
+  "NEXT_PUBLIC_APP_URL",
+  "NEXT_PUBLIC_MARKETING_URL",
+  "NEXT_PUBLIC_DOCS_URL",
+  "NEXT_PUBLIC_LEGAL_URL",
+  "NEXT_PUBLIC_AUTH_URL",
+  "NEXT_PUBLIC_ENABLE_SUBDOMAIN_REDIRECTS",
+  "AUTH_URL",
+  "NEXTAUTH_URL",
+]) {
+  assert.ok(vars[name], `wrangler.jsonc vars must declare ${name}`);
+}
+assert.equal(vars.AUTH_URL, "https://auth.tryrevel.xyz", "Google OAuth callback host");
+assert.equal(vars.NEXTAUTH_URL, vars.AUTH_URL);
+assert.equal(vars.NEXT_PUBLIC_AUTH_URL, vars.AUTH_URL);
+assert.equal(vars.NEXT_PUBLIC_ENABLE_SUBDOMAIN_REDIRECTS, "true");
+for (const [name, value] of Object.entries(vars)) {
+  assert.doesNotMatch(
+    name,
+    /SECRET|API_KEY|TOKEN|PASSWORD|PASSPHRASE|CREDENTIAL/i,
+    `${name} looks like a credential and must not be a committed var`
+  );
+  assert.doesNotMatch(value, /localhost|127\.0\.0\.1/, `${name} must not be a local value`);
+}
+
+// A real build variable always wins over the committed default.
+const withOverride = env({ NEXT_PUBLIC_APP_URL: "https://staging.tryrevel.xyz" });
+applyConfigVars(withOverride);
+assert.equal(withOverride.NEXT_PUBLIC_APP_URL, "https://staging.tryrevel.xyz");
+assert.equal(withOverride.AUTH_URL, vars.AUTH_URL, "other vars are still filled in");
+
+// An empty build variable is treated as unset, not as an override.
+const withEmpty = env({ NEXT_PUBLIC_APP_URL: "" });
+applyConfigVars(withEmpty);
+assert.equal(withEmpty.NEXT_PUBLIC_APP_URL, vars.NEXT_PUBLIC_APP_URL);
 
 // --- Hyperdrive id injection ------------------------------------------------
 assert.equal(resolveHyperdriveId(env({ CLOUDFLARE_HYPERDRIVE_ID: ID })), ID);

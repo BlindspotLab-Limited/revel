@@ -264,9 +264,16 @@ Revel is hosted on **Cloudflare Workers** via the OpenNext adapter, deployed
 by Cloudflare Workers Builds from the `main` branch. The step-by-step,
 dashboard-only guide is **[cloudflare-deployment.md](cloudflare-deployment.md)**.
 
-- Config: `wrangler.jsonc` (no account-specific values). The Hyperdrive id
-  comes from the `CLOUDFLARE_HYPERDRIVE_ID` build variable; the build writes
-  the git-ignored `wrangler.deploy.jsonc`.
+- Config: `wrangler.jsonc` (no account-specific values). Public settings
+  (site URLs, subdomain routing, auth host) live in its `vars` block and are
+  loaded into the build environment by `scripts/cloudflare/build.mjs`, so
+  only `CLOUDFLARE_HYPERDRIVE_ID` has to be a Workers Builds build variable;
+  the build writes the git-ignored `wrangler.deploy.jsonc`.
+- Secrets: `node scripts/cloudflare/upload-secrets.mjs` uploads the runtime
+  secrets from a local dotenv file via `wrangler secret bulk` (stdin, no file
+  on disk, names only in output). `--compare <file>` checks local values
+  against a production pull without printing them. It refuses any name
+  declared in `wrangler.jsonc` `vars`.
 - Entry: `cloudflare/worker.ts` wraps the OpenNext worker and adds the
   `AuditWorkflow` export and the `0 6 * * *` IndexNow cron.
 - Database: existing Supabase Postgres through Hyperdrive. Builds and

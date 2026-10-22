@@ -199,39 +199,79 @@ secrets** (build section, *not* the runtime "Variables and Secrets").
 These are baked into the site when it is built. Changing one needs a new
 build: **Deployments / Builds → Retry build**, or push a commit.
 
-Required:
+**Only one is required:**
 
 - `CLOUDFLARE_HYPERDRIVE_ID` = the ID from step 2
-- `NEXT_PUBLIC_APP_URL` = `https://tryrevel.xyz`
-- `NEXT_PUBLIC_MARKETING_URL` = `https://tryrevel.xyz`
-- `NEXT_PUBLIC_DOCS_URL` = `https://docs.tryrevel.xyz`
-- `NEXT_PUBLIC_LEGAL_URL` = `https://legal.tryrevel.xyz`
-- `NEXT_PUBLIC_AUTH_URL` = `https://auth.tryrevel.xyz`
-- `NEXT_PUBLIC_ENABLE_SUBDOMAIN_REDIRECTS` = `true`
 
-Copy these from Vercel if set there (public values, not secrets):
+The site URLs (`NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_MARKETING_URL`,
+`NEXT_PUBLIC_DOCS_URL`, `NEXT_PUBLIC_LEGAL_URL`, `NEXT_PUBLIC_AUTH_URL`,
+`NEXT_PUBLIC_ENABLE_SUBDOMAIN_REDIRECTS`, `AUTH_URL`, `NEXTAUTH_URL`) are
+already committed in `wrangler.jsonc` under `vars`, and the build loads
+them automatically. They are public values — they appear in the site's own
+HTML — so there is nothing to type here. Setting one as a build variable
+anyway overrides the committed value (useful for a staging build).
 
-- `NEXT_PUBLIC_PLAUSIBLE_DOMAIN`
+Optional, if you use them (public values, not secrets):
+
+- `NEXT_PUBLIC_PLAUSIBLE_DOMAIN` — needed at build time, so set it here
+  (or add it to `vars` in `wrangler.jsonc`)
 - `GOOGLE_SITE_VERIFICATION`, `BING_SITE_VERIFICATION`,
-  `YANDEX_SITE_VERIFICATION` (add them as runtime values too, step 5)
+  `YANDEX_SITE_VERIFICATION` — these are read at runtime, so step 5 covers
+  them; no build variable needed
 
 Do **not** put passwords, API keys or the database connection string in
 build variables.
 
-The build stops with an explicit error if `CLOUDFLARE_HYPERDRIVE_ID`,
-`NEXT_PUBLIC_APP_URL` or `NEXT_PUBLIC_ENABLE_SUBDOMAIN_REDIRECTS` is
-missing, or if the Hyperdrive ID doesn't look like an ID.
+The build stops with an explicit error if `CLOUDFLARE_HYPERDRIVE_ID` is
+missing or doesn't look like an ID.
+
+**If you would rather not type even that one:** the Hyperdrive ID is an
+identifier, not a credential (it is useless without access to your
+Cloudflare account), and Cloudflare's own docs put it in the committed
+Wrangler config. You can add it to `vars` in `wrangler.jsonc` as
+`"CLOUDFLARE_HYPERDRIVE_ID": "<the id>"`, commit, and then no build
+variable is needed at all. It was left out of git by default because you
+asked for no account-specific values in the repository.
 
 ---
 
 ## 7. Step 5 — Runtime variables and secrets [RUNTIME]
 
-Where: **Workers & Pages → revel → Settings → Variables and Secrets →
-Add**. Pick **Type: Secret** for anything sensitive. Add several, then tap
-**Deploy**.
+Two ways to do this. **If you have a computer available, use the script —
+it is faster and safer than typing 30 values on a phone:**
 
-Open Vercel → revel → Settings → Environment Variables (Production) in
-another tab and copy the values across **exactly**.
+```
+npx wrangler login
+node scripts/cloudflare/upload-secrets.mjs --dry-run    # shows names only
+node scripts/cloudflare/upload-secrets.mjs              # uploads
+npx wrangler secret list --name revel                   # confirm (names only)
+```
+
+It reads `.env.local`, uploads only the values the Worker actually uses,
+and pipes them straight to `wrangler secret bulk` — no file of secrets is
+written to disk and no value is ever printed. It refuses to upload
+anything declared in `wrangler.jsonc` `vars` (so a local
+`NEXT_PUBLIC_APP_URL=http://localhost:3000` cannot reach production), and
+skips `DATABASE_URL`, `DIRECT_URL` and `SUPABASE_*`.
+
+Before uploading, check your local values are the ones production is
+using today — a different `AUTH_SECRET` signs everyone out, and a
+different `INTEGRATIONS_ENCRYPTION_KEY` makes stored integration tokens
+unreadable:
+
+```
+npx vercel env pull .env.production.local --environment=production
+node scripts/cloudflare/upload-secrets.mjs --compare .env.production.local
+```
+
+That prints `same` / `DIFFERENT` per name and never shows a value. Delete
+`.env.production.local` afterwards.
+
+**By hand (phone):** **Workers & Pages → revel → Settings → Variables and
+Secrets → Add**. Pick **Type: Secret** for anything sensitive. Add
+several, then tap **Deploy**. Open Vercel → revel → Settings →
+Environment Variables (Production) in another tab and copy the values
+across **exactly**.
 
 > **Must be identical to Vercel**, character for character:
 > - `AUTH_SECRET` and `NEXTAUTH_SECRET` — otherwise everyone is signed out
@@ -590,12 +630,13 @@ Wait at least **7 days** of normal traffic on Cloudflare, then:
 
 ## Appendix A — All environment variables
 
-**Build variables** (Settings → Build): `CLOUDFLARE_HYPERDRIVE_ID`,
-`NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_MARKETING_URL`,
+**Build variables** (Settings → Build): `CLOUDFLARE_HYPERDRIVE_ID` — the
+only required one. Optional: `NEXT_PUBLIC_PLAUSIBLE_DOMAIN`.
+
+**Committed in `wrangler.jsonc` `vars`** (public; loaded by the build, so
+nothing to enter): `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_MARKETING_URL`,
 `NEXT_PUBLIC_DOCS_URL`, `NEXT_PUBLIC_LEGAL_URL`, `NEXT_PUBLIC_AUTH_URL`,
-`NEXT_PUBLIC_ENABLE_SUBDOMAIN_REDIRECTS`, `NEXT_PUBLIC_PLAUSIBLE_DOMAIN`,
-optional `GOOGLE_SITE_VERIFICATION`, `BING_SITE_VERIFICATION`,
-`YANDEX_SITE_VERIFICATION`.
+`NEXT_PUBLIC_ENABLE_SUBDOMAIN_REDIRECTS`, `AUTH_URL`, `NEXTAUTH_URL`.
 
 **Runtime secrets**: `AUTH_SECRET`, `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET`, `INTEGRATIONS_ENCRYPTION_KEY`, `NVIDIA_API_KEY`,

@@ -72,10 +72,9 @@ ops-local/
 
 # cloudflare workers (OpenNext + Wrangler build output, local secrets)
 /.open-next/
-/.wrangler/
+.wrangler/
 /wrangler.deploy.jsonc
 /cloudflare/worker-configuration.d.ts
 .dev.vars
 .dev.vars.*
 /lib/generated/prisma-workerd
-/cloudflare-secrets.json

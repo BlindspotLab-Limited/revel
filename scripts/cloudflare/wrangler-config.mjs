@@ -56,6 +56,32 @@ export function isWorkersCi(env = process.env) {
   return env.WORKERS_CI === "1";
 }
 
+/** The public, non-secret `vars` declared in wrangler.jsonc. */
+export function readConfigVars(baseText = readFileSync(BASE_CONFIG, "utf8")) {
+  const vars = parseJsonc(baseText).vars ?? {};
+  return Object.fromEntries(
+    Object.entries(vars).filter(([, value]) => typeof value === "string")
+  );
+}
+
+/**
+ * Load wrangler.jsonc `vars` into an environment, without overwriting values
+ * already set there. `next build` inlines NEXT_PUBLIC_* at build time, so the
+ * build needs them as real environment variables; keeping them in the config
+ * means they do not have to be re-entered as Workers Builds build variables,
+ * while a genuine build variable of the same name still wins.
+ */
+export function applyConfigVars(env = process.env, baseText) {
+  const applied = [];
+  for (const [name, value] of Object.entries(readConfigVars(baseText))) {
+    if (env[name] === undefined || env[name] === "") {
+      env[name] = value;
+      applied.push(name);
+    }
+  }
+  return applied;
+}
+
 /**
  * Resolve the Hyperdrive id to bind, or throw with an actionable message.
  * - Workers Builds (WORKERS_CI=1): CLOUDFLARE_HYPERDRIVE_ID is mandatory.

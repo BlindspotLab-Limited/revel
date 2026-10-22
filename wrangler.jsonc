@@ -19,6 +19,27 @@
     "binding": "ASSETS"
   },
 
+  // Public, non-secret configuration. Committed on purpose: these values are
+  // visible in the site's own HTML, are the same for every deployment, and
+  // the NEXT_PUBLIC_* ones must exist at BUILD time (Next.js inlines them).
+  // scripts/cloudflare/build.mjs loads them into the build environment, so
+  // they do NOT have to be typed in as Workers Builds build variables.
+  //
+  // NEVER put a credential here — it would be readable in the repository and
+  // in the dashboard. Secrets are uploaded separately
+  // (scripts/cloudflare/upload-secrets.mjs), and that script refuses any name
+  // listed here so a plain-text var can never overwrite a secret.
+  "vars": {
+    "NEXT_PUBLIC_APP_URL": "https://tryrevel.xyz",
+    "NEXT_PUBLIC_MARKETING_URL": "https://tryrevel.xyz",
+    "NEXT_PUBLIC_DOCS_URL": "https://docs.tryrevel.xyz",
+    "NEXT_PUBLIC_LEGAL_URL": "https://legal.tryrevel.xyz",
+    "NEXT_PUBLIC_AUTH_URL": "https://auth.tryrevel.xyz",
+    "NEXT_PUBLIC_ENABLE_SUBDOMAIN_REDIRECTS": "true",
+    "AUTH_URL": "https://auth.tryrevel.xyz",
+    "NEXTAUTH_URL": "https://auth.tryrevel.xyz"
+  },
+
   "services": [
     // Self-reference used by OpenNext, the audit Workflow and the cron
     // handler. Must match "name" above.
