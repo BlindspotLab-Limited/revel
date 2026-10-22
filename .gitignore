@@ -78,3 +78,4 @@ ops-local/
 .dev.vars
 .dev.vars.*
 /lib/generated/prisma-workerd
+/cloudflare-secrets.json
