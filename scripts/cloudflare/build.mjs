@@ -22,10 +22,21 @@ import {
   writeDeployConfig,
 } from "./wrangler-config.mjs";
 
+/**
+ * Windows: `npx` is a .cmd shim, and Node refuses to execute one without a
+ * shell. Same approach as upload-secrets.mjs. With `shell: true` arguments
+ * are concatenated rather than escaped, so any argument containing a space
+ * (these include absolute paths) is quoted first.
+ */
+const NPX = process.platform === "win32" ? "npx.cmd" : "npx";
+const USE_SHELL = process.platform === "win32";
+const shellArg = (arg) => (USE_SHELL && /\s/.test(arg) ? `"${arg}"` : arg);
+
 function run(command, args, extraEnv = {}) {
-  const result = spawnSync(command, args, {
+  const result = spawnSync(command, args.map(shellArg), {
     cwd: ROOT,
     stdio: "inherit",
+    shell: USE_SHELL,
     env: { ...process.env, ...extraEnv },
   });
   if (result.status !== 0) {
@@ -77,7 +88,7 @@ console.log(
   })`
 );
 
-run("npx", ["prisma", "generate"]);
-run("npx", ["opennextjs-cloudflare", "build", "--config", DEPLOY_CONFIG], {
+run(NPX, ["prisma", "generate"]);
+run(NPX, ["opennextjs-cloudflare", "build", "--config", DEPLOY_CONFIG], {
   REVEL_BUILD_TARGET: "cloudflare",
 });

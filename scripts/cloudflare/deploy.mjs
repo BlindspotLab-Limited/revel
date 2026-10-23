@@ -34,9 +34,21 @@ const env = { ...process.env };
 env.CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE ||=
   "postgresql://unused:unused@127.0.0.1:5432/unused";
 
+/**
+ * Windows: `npx` is a .cmd shim, and Node refuses to execute one without a
+ * shell. Same approach as upload-secrets.mjs. With `shell: true` arguments
+ * are concatenated rather than escaped, so any argument containing a space
+ * (these include absolute paths) is quoted first.
+ */
+const NPX = process.platform === "win32" ? "npx.cmd" : "npx";
+const USE_SHELL = process.platform === "win32";
+const shellArg = (arg) => (USE_SHELL && /\s/.test(arg) ? `"${arg}"` : arg);
+
 const result = spawnSync(
-  "npx",
-  ["opennextjs-cloudflare", mode, "--config", DEPLOY_CONFIG, ...extraArgs],
-  { cwd: ROOT, stdio: "inherit", env }
+  NPX,
+  ["opennextjs-cloudflare", mode, "--config", DEPLOY_CONFIG, ...extraArgs].map(
+    shellArg
+  ),
+  { cwd: ROOT, stdio: "inherit", shell: USE_SHELL, env }
 );
 process.exit(result.status ?? 1);
