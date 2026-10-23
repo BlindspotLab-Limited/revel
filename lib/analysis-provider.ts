@@ -17,14 +17,17 @@ export function getAnalysisMode(): AnalysisMode {
   const raw = process.env.ANALYSIS_MODE?.toLowerCase();
   if (raw === "legacy") return "legacy";
   if (raw === "agentic") return "agentic";
+  // Every backend now has an agentic implementation, OpenRouter included
+  // (services/openrouter-agent.ts), so any configured key means the cascade
+  // can crawl. Previously an OpenRouter-only deployment silently fell back to
+  // the single-shot path, which reads the homepage alone.
   if (
     isGroqAgentEnabled() ||
     isGeminiAgentEnabled() ||
-    isOpenRouterEnabled()
+    isOpenRouterEnabled() ||
+    isNvidiaAgentEnabled()
   ) {
-    // OpenRouter-only → still use cascade via generateAgenticAnalysis when agentic keys exist
-    if (isGroqAgentEnabled() || isGeminiAgentEnabled()) return "agentic";
-    return "legacy";
+    return "agentic";
   }
   return "legacy";
 }
@@ -240,6 +243,42 @@ export function getNvidiaMaxOutputTokens(): number {
  * though a finished report is only a few thousand tokens. Bounding it keeps
  * spend predictable and the request affordable.
  */
+/**
+ * OpenRouter model order: OPENROUTER_MODEL, then OPENROUTER_MODEL_FALLBACK
+ * (comma-separated), then the built-in list.
+ *
+ * Lives here, with the other providers' model getters, so both the agentic
+ * loop (services/openrouter-agent.ts) and the single-shot path
+ * (lib/openrouter.ts) resolve the same models.
+ *
+ * The built-in entries used to be ":free" slugs. Verified against OpenRouter
+ * on 2026-10-23: qwen3-next-80b:free and nemotron-3-super:free return 404
+ * ("unavailable for free") and gemma-4-31b-it:free returns 429. These paid
+ * slugs are confirmed to answer, to honour response_format: json_object and
+ * to support tool calling. Re-verify when OpenRouter retires a model.
+ */
+const DEFAULT_OPENROUTER_MODEL = "google/gemini-2.5-flash";
+const BUILTIN_OPENROUTER_FALLBACKS = [
+  "google/gemini-2.5-pro",
+  "openai/gpt-oss-120b",
+];
+
+export function getOpenRouterModels(): string[] {
+  const primary = process.env.OPENROUTER_MODEL?.trim() || DEFAULT_OPENROUTER_MODEL;
+  const extra = (process.env.OPENROUTER_MODEL_FALLBACK ?? "")
+    .split(",")
+    .map((model) => model.trim())
+    .filter(Boolean);
+
+  return [
+    ...new Set([
+      primary,
+      ...extra,
+      ...BUILTIN_OPENROUTER_FALLBACKS.filter((model) => model !== primary),
+    ]),
+  ];
+}
+
 export function getOpenRouterMaxOutputTokens(): number {
   const n = Number(process.env.OPENROUTER_MAX_OUTPUT_TOKENS ?? "8000");
   return Number.isFinite(n) && n > 0 ? Math.min(n, 32768) : 8000;

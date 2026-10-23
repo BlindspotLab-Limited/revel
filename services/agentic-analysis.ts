@@ -18,6 +18,7 @@ import {
 } from "@/services/content-extractor";
 import { runGeminiAgent } from "@/services/gemini-agent";
 import { runGroqAgent } from "@/services/groq-agent";
+import { runOpenRouterAgent } from "@/services/openrouter-agent";
 import { runNvidiaAgent } from "@/services/nvidia-agent";
 
 /**
@@ -41,6 +42,27 @@ async function fetchContentForSingleShot(website: string): Promise<string> {
   }
 
   return evidenceToPromptText(evidence);
+}
+
+/**
+ * OpenRouter backend: agentic crawl first, single-shot homepage as a net.
+ *
+ * The agent reaches the same page-coverage target as Groq and NVIDIA. If it
+ * cannot finish — a model whose tool calling is unusable, a malformed tool
+ * stream — the single-shot path still produces a grounded report from the
+ * homepage instead of failing the audit outright. A spent budget is terminal:
+ * the fallback could not finish either, so it is rethrown untouched.
+ */
+async function runOpenRouterBackend(website: string): Promise<AnalysisReport> {
+  try {
+    return await runOpenRouterAgent(website);
+  } catch (error) {
+    if (isDeadlineError(error)) throw error;
+    logServerError("openrouter_agent_fallback", serverErrorDetail(error), {
+      website,
+    });
+    return await runOpenRouterAnalysis(website);
+  }
 }
 
 async function runOpenRouterAnalysis(website: string): Promise<AnalysisReport> {
@@ -73,8 +95,9 @@ async function runOpenRouterAnalysis(website: string): Promise<AnalysisReport> {
 
 /**
  * Run analysis with the cascade from getAnalysisProviderChain():
- *   NVIDIA (agentic) → Groq (agentic) → OpenRouter (grounded single-shot)
- *   → Gemini (agentic), with NVIDIA repeated last as a demoted fallback.
+ *   NVIDIA (agentic) → Groq (agentic) → OpenRouter (agentic, with the
+ *   grounded single-shot path as its own fallback) → Gemini (agentic), with
+ *   NVIDIA repeated last as a demoted fallback.
  *
  * NVIDIA leads only when NVIDIA_API_KEY is set and NVIDIA_PRIMARY is not
  * "false"; demoted or unkeyed, the order falls back to Groq first.
@@ -113,7 +136,7 @@ export async function generateAgenticAnalysis(
         return await runGroqAgent(website);
       }
       if (provider === "openrouter") {
-        return await runOpenRouterAnalysis(website);
+        return await runOpenRouterBackend(website);
       }
       if (provider === "nvidia") {
         return await runNvidiaAgent(website);

@@ -11,6 +11,7 @@ import {
 import { getEvidenceStore } from "@/lib/audit/evidence-context";
 import {
   getOpenRouterMaxOutputTokens,
+  getOpenRouterModels,
   getProviderMaxRetries,
   getProviderRequestTimeoutMs,
 } from "@/lib/analysis-provider";
@@ -31,41 +32,9 @@ import { buildAnalysisPrompt } from "./prompt-builder";
 import { siteConfig } from "./site-config";
 import type { AnalysisReport, ReportCoverage } from "@/types/analysis";
 
-/**
- * Model selection order: OPENROUTER_MODEL, then OPENROUTER_MODEL_FALLBACK
- * (comma-separated), then the built-in list below.
- *
- * Production recommendation: google/gemini-2.5-flash — reliable JSON mode,
- * roughly $0.003 per analysis at 20k in / 3k out.
- *
- * The built-in entries were all ":free" slugs. Verified against OpenRouter on
- * 2026-10-23: qwen3-next-80b:free and nemotron-3-super:free return 404
- * ("unavailable for free") and gemma-4-31b-it:free returns 429, so the entire
- * built-in safety net was dead and every audit fell through it.
- *
- * These are paid slugs confirmed to answer and to honour
- * response_format: json_object. Re-verify when OpenRouter retires a model.
- */
-const BUILTIN_FALLBACK_MODELS = [
-  "google/gemini-2.5-pro",
-  "openai/gpt-oss-120b",
-];
-
-const DEFAULT_MODEL = "google/gemini-2.5-flash";
-
 interface OpenRouterMessage {
   role: "user" | "assistant" | "system";
   content: string;
-}
-
-function analysisModels(): string[] {
-  const primary = process.env.OPENROUTER_MODEL || DEFAULT_MODEL;
-  const extra = (process.env.OPENROUTER_MODEL_FALLBACK ?? "")
-    .split(",")
-    .map((m) => m.trim())
-    .filter(Boolean);
-
-  return [...new Set([primary, ...extra, ...BUILTIN_FALLBACK_MODELS])];
 }
 
 function isRetryableStatus(status: number): boolean {
@@ -195,7 +164,7 @@ export async function generateAnalysis(
   }
 
   const prompt = buildAnalysisPrompt(website, content);
-  const models = analysisModels();
+  const models = getOpenRouterModels();
   const errors: string[] = [];
   const store = getEvidenceStore();
 

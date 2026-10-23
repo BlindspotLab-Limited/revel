@@ -68,7 +68,7 @@ interface ChatResponse {
 }
 
 export interface OpenAiCompatibleConfig {
-  provider: "groq" | "nvidia";
+  provider: "groq" | "nvidia" | "openrouter";
   baseUrl: string;
   apiKey: string;
   models: string[];
@@ -76,6 +76,8 @@ export interface OpenAiCompatibleConfig {
   maxOutputTokens?: number;
   /** Provider-specific body fields (e.g. nemotron chat_template_kwargs). */
   extraBody?: Record<string, unknown>;
+  /** Provider-specific headers (e.g. OpenRouter attribution). */
+  extraHeaders?: Record<string, string>;
 }
 
 function isRetryableStatus(status: number): boolean {
@@ -144,6 +146,7 @@ async function callModel(
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         "Content-Type": "application/json",
+        ...config.extraHeaders,
       },
       body: JSON.stringify(body),
     });
