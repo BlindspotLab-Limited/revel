@@ -10,6 +10,7 @@ import {
 } from "@/lib/audit/capabilities";
 import { getEvidenceStore } from "@/lib/audit/evidence-context";
 import {
+  getOpenRouterMaxOutputTokens,
   getProviderMaxRetries,
   getProviderRequestTimeoutMs,
 } from "@/lib/analysis-provider";
@@ -31,16 +32,23 @@ import { siteConfig } from "./site-config";
 import type { AnalysisReport, ReportCoverage } from "@/types/analysis";
 
 /**
- * Primary: OPENROUTER_MODEL
- * Fallbacks: OPENROUTER_MODEL_FALLBACK (comma-separated), then built-in free alternates
+ * Model selection order: OPENROUTER_MODEL, then OPENROUTER_MODEL_FALLBACK
+ * (comma-separated), then the built-in list below.
  *
- * Production recommendation: google/gemini-2.5-flash (~$0.01/analysis, reliable JSON)
- * Free fallback when rate-limited: qwen/qwen3-next-80b-a3b-instruct:free
+ * Production recommendation: google/gemini-2.5-flash — reliable JSON mode,
+ * roughly $0.003 per analysis at 20k in / 3k out.
+ *
+ * The built-in entries were all ":free" slugs. Verified against OpenRouter on
+ * 2026-10-23: qwen3-next-80b:free and nemotron-3-super:free return 404
+ * ("unavailable for free") and gemma-4-31b-it:free returns 429, so the entire
+ * built-in safety net was dead and every audit fell through it.
+ *
+ * These are paid slugs confirmed to answer and to honour
+ * response_format: json_object. Re-verify when OpenRouter retires a model.
  */
 const BUILTIN_FALLBACK_MODELS = [
-  "qwen/qwen3-next-80b-a3b-instruct:free",
-  "nvidia/nemotron-3-super-120b-a12b:free",
-  "google/gemma-4-31b-it:free",
+  "google/gemini-2.5-pro",
+  "openai/gpt-oss-120b",
 ];
 
 const DEFAULT_MODEL = "google/gemini-2.5-flash";
@@ -90,6 +98,9 @@ async function requestAnalysis(
           messages: [{ role: "user", content: prompt }] as OpenRouterMessage[],
           response_format: { type: "json_object" },
           temperature: 0.4,
+          // Without this OpenRouter reserves the model's full output window
+          // and rejects the request with 402 unless the balance covers it.
+          max_tokens: getOpenRouterMaxOutputTokens(),
           // Ask OpenRouter for real billed cost so estimates are a fallback.
           usage: { include: true },
         }),
@@ -193,7 +204,11 @@ export async function generateAnalysis(
 
     if (!result.ok) {
       errors.push(`${model} (${result.status}): ${result.detail.slice(0, 120)}`);
-      if (isRetryableStatus(result.status)) {
+      // A 404 is model-level — that slug is gone or not available on this key,
+      // which says nothing about the next model. Treating it as terminal meant
+      // one retired slug disabled the entire fallback list. Account-level
+      // failures (401/403) still end the loop, since no model would succeed.
+      if (isRetryableStatus(result.status) || result.status === 404) {
         continue;
       }
       break;

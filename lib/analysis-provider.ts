@@ -231,6 +231,20 @@ export function getNvidiaMaxOutputTokens(): number {
   return Number.isFinite(n) && n > 0 ? Math.min(n, 32768) : 8192;
 }
 
+/**
+ * Output ceiling for an OpenRouter analysis request.
+ *
+ * Without an explicit max_tokens, OpenRouter reserves the model's entire
+ * output window (65,535 for gemini-2.5-flash). That inflates the credit a
+ * request must have available and returns HTTP 402 on a low balance, even
+ * though a finished report is only a few thousand tokens. Bounding it keeps
+ * spend predictable and the request affordable.
+ */
+export function getOpenRouterMaxOutputTokens(): number {
+  const n = Number(process.env.OPENROUTER_MAX_OUTPUT_TOKENS ?? "8000");
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 32768) : 8000;
+}
+
 export function getAgentMaxSteps(): number {
   const n = Number(process.env.AGENT_MAX_STEPS ?? "10");
   return Number.isFinite(n) && n > 0 ? Math.min(n, 20) : 10;
