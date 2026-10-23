@@ -72,9 +72,14 @@ async function runOpenRouterAnalysis(website: string): Promise<AnalysisReport> {
 }
 
 /**
- * Run analysis with cascade:
- *   Groq (agentic) → OpenRouter (grounded single-shot) → Gemini (agentic)
- *   → NVIDIA (agentic, only when NVIDIA_ENABLE_FALLBACK=true)
+ * Run analysis with the cascade from getAnalysisProviderChain():
+ *   NVIDIA (agentic) → Groq (agentic) → OpenRouter (grounded single-shot)
+ *   → Gemini (agentic), with NVIDIA repeated last as a demoted fallback.
+ *
+ * NVIDIA leads only when NVIDIA_API_KEY is set and NVIDIA_PRIMARY is not
+ * "false"; demoted or unkeyed, the order falls back to Groq first.
+ * ANALYSIS_PROVIDER pins one backend to the front. There is no
+ * NVIDIA_ENABLE_FALLBACK flag — nothing reads it.
  *
  * On recoverable errors, try the next backend. Client only ever sees a generic
  * message. The caller is responsible for scoping an evidence store.
