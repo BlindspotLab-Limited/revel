@@ -69,3 +69,12 @@ agent-tools/
 # other maintainers, CI, or agents in a fresh clone. Anything another person
 # needs must live in a tracked file or the team secret store.
 ops-local/
+
+# cloudflare workers (OpenNext + Wrangler build output, local secrets)
+/.open-next/
+.wrangler/
+/wrangler.deploy.jsonc
+/cloudflare/worker-configuration.d.ts
+.dev.vars
+.dev.vars.*
+/lib/generated/prisma-workerd

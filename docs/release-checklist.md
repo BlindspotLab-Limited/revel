@@ -2,20 +2,25 @@
 
 Nothing here has been deployed. Production is untouched.
 
+> Hosting has since moved to **Cloudflare Workers**. Where this checklist
+> says to set a value in production, set it as a Worker secret / variable
+> (Cloudflare → Workers & Pages → revel → Settings → Variables and Secrets).
+> Deployment steps: [cloudflare-deployment.md](cloudflare-deployment.md).
+
 ---
 
 ## 0. Pre-flight (blockers)
 
 | # | Blocker | Owner action |
 |---|---------|--------------|
-| B1 | `NVIDIA_API_KEY` is not set anywhere | Create a key at build.nvidia.com and set it locally + on Vercel. **Until this is set, NVIDIA cannot be primary and no live NVIDIA evaluation has been run.** |
-| B2 | `OKX_PAY_TO` still holds the inaccessible wallet `0xe4c9…c5d2` | Set it to `0xA7a2a00D24982c9eBeB16effFd58cEB5DfC94591` in `.env.local` **and** Vercel |
-| B3 | Production OKX credentials are still the rejected ones (HTTP 401) | Copy the new `OKX_API_KEY` / `OKX_SECRET_KEY` / `OKX_PASSPHRASE` from `.env.local` to Vercel |
+| B1 | `NVIDIA_API_KEY` is not set anywhere | Create a key at build.nvidia.com and set it locally + in production (Cloudflare Worker secret). **Until this is set, NVIDIA cannot be primary and no live NVIDIA evaluation has been run.** |
+| B2 | `OKX_PAY_TO` still holds the inaccessible wallet `0xe4c9…c5d2` | Set it to `0xA7a2a00D24982c9eBeB16effFd58cEB5DfC94591` in `.env.local` **and** production (Cloudflare) |
+| B3 | Production OKX credentials are still the rejected ones (HTTP 401) | Copy the new `OKX_API_KEY` / `OKX_SECRET_KEY` / `OKX_PASSPHRASE` from `.env.local` to production (Cloudflare Worker secrets) |
 | B4 | `ai_usage_events` table does not exist | Apply the migration (step 2) |
 
 ---
 
-## 1. Environment variables to set on Vercel (Production)
+## 1. Environment variables to set in production (Cloudflare Worker)
 
 Values come from your local `.env.local`. Only names are listed here.
 
@@ -39,7 +44,7 @@ AUDIT_MIN_PAGES  AUDIT_MAX_PAGES  AUDIT_BUDGET_MS
 PROVIDER_REQUEST_TIMEOUT_MS  PROVIDER_MAX_RETRIES
 ```
 
-**Check for a stale value:** if `GROQ_MODEL` or `GROQ_MODEL_FALLBACK` on Vercel
+**Check for a stale value:** if `GROQ_MODEL` or `GROQ_MODEL_FALLBACK` in production
 still names `llama-3.3-70b-versatile` or `llama-3.1-8b-instant`, clear them.
 Those models return HTTP 404. The code filters them out, but clearing avoids
 confusion.
@@ -137,8 +142,9 @@ See `okx/REMEDIATION.md`.
 
 ### Fast path — application
 
-Revert the deployment in the Vercel dashboard (Deployments → previous
-production build → Promote). Takes effect immediately.
+Roll back the Worker in the Cloudflare dashboard (Workers & Pages → revel →
+Deployments → previous version → ⋯ → Rollback). Takes effect immediately.
+See [cloudflare-deployment.md](cloudflare-deployment.md) → Rollback.
 
 The code change is safe to roll back at any time: **the migration is additive
 and the old code ignores the new columns and table.** There is no schema

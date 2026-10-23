@@ -24,6 +24,9 @@ import {
 } from "@/lib/mcp/payment-gate";
 
 export const runtime = "nodejs";
+// Ignored on Cloudflare Workers (no wall-clock limit; audits run in a
+// Workflow). Kept only while Vercel remains the rollback target — see
+// docs/cloudflare-deployment.md → "Remove Vercel safely".
 export const maxDuration = 300;
 
 const corsHeaders: Record<string, string> = {

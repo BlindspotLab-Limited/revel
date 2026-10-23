@@ -1,0 +1,18 @@
+{
+  // Type-checks the Worker entry and the audit Workflow against the Workers
+  // runtime types. Run `npm run typecheck:cloudflare` (generates
+  // worker-configuration.d.ts with `wrangler types` first).
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "types": ["node"],
+    "paths": { "@/*": ["../*"] }
+  },
+  "include": ["./*.ts", "../lib/audit/job.ts", "../lib/audit/internal-token.ts"]
+}

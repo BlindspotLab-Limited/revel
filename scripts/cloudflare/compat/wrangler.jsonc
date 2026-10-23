@@ -1,0 +1,9 @@
+{
+  // Local-only probe (scripts/cloudflare/test-runtime.mjs). Never deployed.
+  // Keep compatibility_date / flags in sync with the root wrangler.jsonc.
+  "name": "revel-compat-probe",
+  "main": "worker.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "vars": { "INTEGRATIONS_ENCRYPTION_KEY": "compat-test-key" }
+}

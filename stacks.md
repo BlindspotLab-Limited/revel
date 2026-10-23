@@ -1,10 +1,10 @@
 # Stack Brief - Revel
 
-Last updated: 2026-07-15
+Last updated: 2026-10-22
 
 ## Overview
 
-Revel is an AI product-strategist web app: paste a public website URL, get a scored **Reveal Index**, Blindspot Map, Blueprint, and Action Queue. Architecture is a Next.js full-stack app on Vercel with Postgres (Supabase/Prisma), multi-provider LLM analysis (agentic tool-use cascade), and an MCP/A2MCP surface with OKX x402 billing for agent marketplace payments. Exports go to Markdown/JSON and optional per-user OAuth destinations (Linear, Notion, GitHub Gist).
+Revel is an AI product-strategist web app: paste a public website URL, get a scored **Reveal Index**, Blindspot Map, Blueprint, and Action Queue. Architecture is a Next.js full-stack app on Cloudflare Workers (OpenNext) with Postgres (Supabase via Hyperdrive/Prisma), multi-provider LLM analysis (agentic tool-use cascade), and an MCP/A2MCP surface with OKX x402 billing for agent marketplace payments. Exports go to Markdown/JSON and optional per-user OAuth destinations (Linear, Notion, GitHub Gist).
 
 ## Frontend
 
@@ -15,23 +15,24 @@ Revel is an AI product-strategist web app: paste a public website URL, get a sco
 
 ## Backend / API
 
-- **Framework/runtime:** Next.js Route Handlers on Node (Vercel)
+- **Framework/runtime:** Next.js Route Handlers on Cloudflare Workers (`nodejs_compat`, OpenNext adapter)
 - **API style:** REST JSON under `app/api/*`
-- **Notable routes:** `/api/analyze` (async audit job, `maxDuration` 300s), `/api/report/[id]`, Partner API `/api/partner/v1/*`, MCP `/api/mcp` + manifest, paid `/api/audit` (x402), export `/api/export`, OAuth integrations, auth signup/reset
-- **Background work:** `after()` for long-running analysis after returning `{ id }`
+- **Notable routes:** `/api/analyze` (async audit job), `/api/report/[id]`, Partner API `/api/partner/v1/*`, MCP `/api/mcp` + manifest, paid `/api/audit` (x402), export `/api/export`, OAuth integrations, auth signup/reset
+- **Background work:** Cloudflare Workflow `revel-audit` (durable, one instance per analysis); `after()` on Node.js
 
 ## Data Layer
 
 - **Database:** PostgreSQL hosted on Supabase
 - **ORM:** Prisma 7 (`@prisma/client`, `@prisma/adapter-pg`)
 - **Schema:** `prisma/schema.prisma` + SQL helpers under `supabase/`
-- **Cache/queue:** None dedicated; in-process rate limiting and weekly audit counters
+- **Connection pooling:** Cloudflare Hyperdrive (binding `HYPERDRIVE`, caching off)
+- **Cache/queue:** None dedicated; Workers Rate Limiting bindings + in-process windows, weekly audit counters
 
 ## Infra / Deploy
 
-- **Hosting:** Vercel (`vercel.json`, region `iad1`)
-- **CI/CD:** Vercel Git deploy from `main`
-- **Cron:** daily IndexNow ping via `/api/indexnow`
+- **Hosting:** Cloudflare Workers, one Worker `revel` (`wrangler.jsonc`, OpenNext `@opennextjs/cloudflare`)
+- **CI/CD:** Cloudflare Workers Builds from `main` (`npm run build:cloudflare` / `npm run deploy:cloudflare`)
+- **Cron:** Cloudflare cron trigger `0 6 * * *` → `/api/indexnow`
 - **Security headers:** `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`
 
 ## Auth

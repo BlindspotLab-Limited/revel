@@ -214,7 +214,7 @@ export function getNvidiaModels(): string[] {
  * (`enable_thinking`, `low_effort`) rather than a top-level `reasoning_effort`
  * field. Reasoning is ON by default upstream; we default it OFF because
  * reasoning traces must never reach a customer report and add latency we
- * cannot spend inside a Vercel function budget.
+ * cannot spend inside the audit budget.
  */
 export function getNvidiaThinkingConfig(): {
   enableThinking: boolean;
@@ -253,9 +253,11 @@ export function getAuditPageTarget(): { min: number; max: number } {
 }
 
 /**
- * Total wall-clock budget for one audit, kept under the Vercel function
- * maxDuration (300s) so the run finishes and persists a result rather than
- * being killed mid-flight with the record stuck in "processing".
+ * Total wall-clock budget for one audit (capped at 280s). On Cloudflare the
+ * run executes inside a Workflow step with a 10-minute timeout
+ * (cloudflare/audit-workflow.ts); the cap keeps a full run plus persistence
+ * well inside it so a result is recorded rather than the record being left
+ * in "processing".
  */
 export function getAuditBudgetMs(): number {
   const n = Number(process.env.AUDIT_BUDGET_MS ?? "240000");

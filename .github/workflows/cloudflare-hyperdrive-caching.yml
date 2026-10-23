@@ -1,0 +1,51 @@
+# One-off helper: turn OFF Hyperdrive query caching for Revel's Hyperdrive
+# configuration, for when the Cloudflare dashboard does not show a caching
+# option. Manual trigger only. Requires two repository secrets:
+#   CLOUDFLARE_API_TOKEN   (Account → Hyperdrive → Edit)
+#   CLOUDFLARE_ACCOUNT_ID
+# See docs/cloudflare-deployment.md → "Step 1".
+name: "Cloudflare: disable Hyperdrive query caching"
+
+on:
+  workflow_dispatch:
+    inputs:
+      hyperdrive_id:
+        description: "Hyperdrive configuration ID (32 characters)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  disable-caching:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate input
+        env:
+          HYPERDRIVE_ID: ${{ inputs.hyperdrive_id }}
+        run: |
+          if ! printf '%s' "$HYPERDRIVE_ID" | grep -Eq '^[0-9a-fA-F]{32}$'; then
+            echo "hyperdrive_id must be the 32-character configuration ID" >&2
+            exit 1
+          fi
+      - name: Disable caching
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          HYPERDRIVE_ID: ${{ inputs.hyperdrive_id }}
+        run: npx --yes wrangler@4.151.0 hyperdrive update "$HYPERDRIVE_ID" --caching-disabled
+      - name: Show caching setting
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          HYPERDRIVE_ID: ${{ inputs.hyperdrive_id }}
+        # Prints only the caching block — never the origin or credentials.
+        run: |
+          npx --yes wrangler@4.151.0 hyperdrive get "$HYPERDRIVE_ID" > hd.json
+          node -e 'const t=require("fs").readFileSync("hd.json","utf8");const j=JSON.parse(t.slice(t.indexOf("{")));console.log("caching:",JSON.stringify(j.caching??{}))'
+          rm -f hd.json

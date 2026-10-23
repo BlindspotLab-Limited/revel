@@ -1,9 +1,12 @@
 /**
- * Ping IndexNow after Vercel production builds.
- * Runs via package.json postbuild when VERCEL_ENV=production.
+ * Manually ping IndexNow for the public pages: `npm run indexnow:ping`.
  *
- * Requires NEXT_PUBLIC_APP_URL=https://tryrevel.xyz on the Vercel project.
- * Set INDEXNOW_DISABLED=true to skip (e.g. preview pipelines).
+ * Production re-indexing runs from the Cloudflare cron trigger (daily
+ * 06:00 UTC → /api/indexnow, see cloudflare/worker.ts). This script no
+ * longer runs as a build hook, so ordinary CI builds never submit URLs.
+ *
+ * Uses NEXT_PUBLIC_APP_URL (default https://tryrevel.xyz).
+ * Set INDEXNOW_DISABLED=true to skip.
  */
 
 const INDEXNOW_ENDPOINTS = [
@@ -38,19 +41,12 @@ const PUBLIC_PATHS = [
 const force = process.argv.includes("--force");
 
 function shouldRun() {
-  if (force) {
-    return true;
-  }
-
   if (process.env.INDEXNOW_DISABLED === "true") {
     return false;
   }
 
-  if (!process.env.VERCEL) {
-    return false;
-  }
-
-  return process.env.VERCEL_ENV === "production";
+  // Explicit opt-in only: never submit as a side effect of a build.
+  return force;
 }
 
 function siteUrl() {
@@ -88,13 +84,13 @@ async function submitToIndexNow() {
 
 async function main() {
   if (!shouldRun()) {
-    console.log("[indexnow] Skipped (not a production Vercel build).");
+    console.log("[indexnow] Skipped (run with --force: npm run indexnow:ping).");
     return;
   }
 
   try {
     const { urlList, results } = await submitToIndexNow();
-    const sha = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local";
+    const sha = process.env.WORKERS_CI_COMMIT_SHA?.slice(0, 7) ?? "manual";
 
     console.log(
       `[indexnow] Submitted ${urlList.length} URLs after deploy ${sha}.`

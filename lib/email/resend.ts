@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { runInBackground } from "@/lib/runtime/cloudflare";
 import { siteConfig } from "@/lib/site-config";
 
 let client: Resend | null = null;
@@ -68,5 +69,5 @@ export async function sendEmail(input: SendEmailInput): Promise<boolean> {
 }
 
 export function sendEmailAsync(input: SendEmailInput): void {
-  void sendEmail(input);
+  runInBackground(sendEmail(input));
 }

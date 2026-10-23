@@ -42,22 +42,28 @@ const blendedAi =
   (1 - FALLBACK_RATE) * groq +
   FALLBACK_RATE * (groq * WASTED_GROQ_FRACTION + openrouter);
 
-// ASSUMPTION: Vercel Fluid compute. 1.7 GB function, ~90s active per audit.
-// Vercel active CPU/memory pricing varies by plan; treat as order-of-magnitude.
-const VERCEL_GB_HOURS = (1.7 * 90) / 3600;
-const VERCEL_USD_PER_GB_HOUR = 0.18; // ASSUMPTION
-const vercel = VERCEL_GB_HOURS * VERCEL_USD_PER_GB_HOUR;
+// ASSUMPTION: Cloudflare Workers Paid, usage beyond the included allowance.
+// Workers bill CPU time, not wall-clock: an audit is mostly I/O wait on
+// providers. ~5s CPU and ~5 requests (start, Workflow step, self-call,
+// polls) per audit. Verify against current Workers / Workflows pricing.
+const CF_CPU_MS_PER_AUDIT = 5_000; // ASSUMPTION
+const CF_USD_PER_MILLION_CPU_MS = 0.02; // ASSUMPTION
+const CF_REQUESTS_PER_AUDIT = 5; // ASSUMPTION
+const CF_USD_PER_MILLION_REQUESTS = 0.3; // ASSUMPTION
+const hosting =
+  (CF_CPU_MS_PER_AUDIT / 1e6) * CF_USD_PER_MILLION_CPU_MS +
+  (CF_REQUESTS_PER_AUDIT / 1e6) * CF_USD_PER_MILLION_REQUESTS;
 
 const f = (n) => `$${n.toFixed(4)}`;
 console.log("--- Per-audit cost model (ALL FIGURES ESTIMATED) ---");
 console.log("Groq agentic run              ", f(groq));
 console.log("OpenRouter single-shot run    ", f(openrouter));
 console.log(`Blended AI (incl. ${FALLBACK_RATE * 100}% fallback)`, f(blendedAi));
-console.log("Vercel compute                ", f(vercel));
-console.log("TOTAL variable cost / audit   ", f(blendedAi + vercel));
+console.log("Cloudflare compute            ", f(hosting));
+console.log("TOTAL variable cost / audit   ", f(blendedAi + hosting));
 console.log("");
 for (const price of [0.2, 0.35, 0.5, 0.75]) {
-  const margin = (price - (blendedAi + vercel)) / price;
+  const margin = (price - (blendedAi + hosting)) / price;
   console.log(
     `  at $${price.toFixed(2)}/audit → gross margin ${(margin * 100).toFixed(1)}%`
   );

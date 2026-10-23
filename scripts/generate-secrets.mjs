@@ -1,6 +1,6 @@
 /**
  * Generate CRON_SECRET and INDEXNOW_SECRET if empty in .env.local.
- * Prints only newly generated values (safe to share with Vercel copy-paste).
+ * Prints only newly generated values (for pasting into Cloudflare Worker secrets).
  */
 import { randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -71,4 +71,4 @@ console.log("[secrets] Written to .env.local\n");
 for (const [key, value] of Object.entries(generated)) {
   console.log(`${key}=${value}`);
 }
-console.log("\n[secrets] Copy the two lines above into Vercel → Environment Variables.");
+console.log("\n[secrets] Add the two values above as Secrets in Cloudflare → Workers & Pages → revel → Settings → Variables and Secrets.");

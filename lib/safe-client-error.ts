@@ -1,6 +1,6 @@
 /**
  * Client-safe error handling: full detail stays server-side only.
- * Vercel Runtime Logs get searchable single-line JSON via logServerError.
+ * Cloudflare Workers Logs get searchable single-line JSON via logServerError.
  */
 
 const CLIENT_AI_GATEWAY_ERROR = "AI gateway error. Please try again.";
@@ -69,7 +69,7 @@ const UNSAFE_PATTERNS = [
 
 /**
  * Error thrown to callers/clients with a safe message, while keeping the real
- * reason on `.serverDetail` for Vercel logs and markAnalysisFailed.
+ * reason on `.serverDetail` for server logs and markAnalysisFailed.
  */
 export class ClientSafeError extends Error {
   readonly serverDetail: string;
@@ -125,8 +125,8 @@ export function serverErrorDetail(error: unknown): string {
 }
 
 /**
- * Emit a searchable single-line JSON error for Vercel Runtime Logs.
- * Do not rely on console.error(msg, object) — Vercel often collapses objects to [Object].
+ * Emit a searchable single-line JSON error for Cloudflare Workers Logs.
+ * Do not rely on console.error(msg, object) — log viewers often collapse objects to [Object].
  */
 export function logServerError(
   scope: string,
@@ -147,7 +147,7 @@ export function logServerError(
     payload.stack = error.stack.split("\n").slice(0, 15).join("\n");
   }
 
-  // One line — fully visible & filterable in Vercel
+  // One line — fully visible & filterable in Workers Logs
   console.error(JSON.stringify(payload));
   // Plain summary for log search by scope name
   console.error(`[Revel] ${scope}: ${detail}`);

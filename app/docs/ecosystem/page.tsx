@@ -73,7 +73,7 @@ export default function EcosystemDocsPage() {
         <DocSection title="Operator checklist">
           <ol className="list-decimal space-y-2 pl-5">
             <li>Register ASP on Onchain OS (Agentic Wallet)</li>
-            <li>Set OKX API keys + <code>OKX_PAY_TO</code> on Vercel</li>
+            <li>Set OKX API keys + <code>OKX_PAY_TO</code> as Cloudflare Worker secrets</li>
             <li>
               Ensure free methods work without payment; billable{" "}
               <code>tools/call</code> returns 402 without payment

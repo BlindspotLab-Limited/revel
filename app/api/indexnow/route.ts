@@ -53,7 +53,8 @@ async function handleIndexNow(request: Request) {
 
 /**
  * POST: manual or external deploy hook (Bearer INDEXNOW_SECRET).
- * GET: Vercel Cron daily re-index (Bearer CRON_SECRET).
+ * GET: daily re-index from the Cloudflare cron trigger (Bearer CRON_SECRET,
+ *      sent by cloudflare/worker.ts `scheduled`).
  */
 export async function POST(request: Request) {
   return handleIndexNow(request);

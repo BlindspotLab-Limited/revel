@@ -1,6 +1,7 @@
 import type { ActivitySource } from "@/lib/activity-context";
 import { getActivityContext } from "@/lib/activity-context";
 import { getPrisma } from "@/lib/prisma";
+import { runInBackground } from "@/lib/runtime/cloudflare";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
 export type ActivityEventType =
@@ -53,5 +54,5 @@ export async function recordActivity(input: RecordActivityInput): Promise<void> 
 }
 
 export function trackActivity(input: RecordActivityInput): void {
-  void recordActivity(input);
+  runInBackground(recordActivity(input));
 }

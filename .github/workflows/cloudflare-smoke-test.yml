@@ -1,0 +1,41 @@
+# Manual, read-only smoke test of a Revel deployment.
+# Run it from the GitHub app or github.com: Actions → "Cloudflare: smoke test"
+# → Run workflow. Never sends payments, never starts audits, never writes data.
+# See docs/cloudflare-deployment.md → "Verify the deployment".
+name: "Cloudflare: smoke test"
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Deployment to test, e.g. https://revel.<your-subdomain>.workers.dev or https://tryrevel.xyz"
+        required: true
+        type: string
+      subdomains:
+        description: "Also check docs./auth./legal. routing (production domain only)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run read-only checks
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          SUBDOMAINS: ${{ inputs.subdomains }}
+        run: |
+          if [ "$SUBDOMAINS" = "true" ]; then
+            node scripts/cloudflare/smoke-test.mjs "$BASE_URL" --subdomains
+          else
+            node scripts/cloudflare/smoke-test.mjs "$BASE_URL"
+          fi
