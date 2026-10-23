@@ -253,15 +253,21 @@ export function getNvidiaMaxOutputTokens(): number {
  *
  * The built-in entries used to be ":free" slugs. Verified against OpenRouter
  * on 2026-10-23: qwen3-next-80b:free and nemotron-3-super:free return 404
- * ("unavailable for free") and gemma-4-31b-it:free returns 429. These paid
- * slugs are confirmed to answer, to honour response_format: json_object and
- * to support tool calling. Re-verify when OpenRouter retires a model.
+ * ("unavailable for free") and gemma-4-31b-it:free returns 429. The paid slug
+ * below is confirmed to answer, to honour response_format: json_object and to
+ * support tool calling. Re-verify when OpenRouter retires a model.
+ *
+ * google/gemini-2.5-pro was removed on 2026-10-24. Measured on one agentic
+ * audit of tryrevel.xyz it cost $0.156 against $0.0023 for claude-haiku-5.5
+ * and $0.0068 for gemini-2.5-flash — 23x the latter — while taking 130s
+ * instead of ~20s and fetching 3 pages instead of 4. Its list price is only
+ * ~4x, so the gap is reasoning tokens billed at $10/M that the evidence gate
+ * then discards. As a last-resort fallback it fired exactly when earlier
+ * models were already failing in bursts, turning an outage into a large bill
+ * for slower, shallower reports.
  */
 const DEFAULT_OPENROUTER_MODEL = "google/gemini-2.5-flash";
-const BUILTIN_OPENROUTER_FALLBACKS = [
-  "google/gemini-2.5-pro",
-  "openai/gpt-oss-120b",
-];
+const BUILTIN_OPENROUTER_FALLBACKS = ["openai/gpt-oss-120b"];
 
 export function getOpenRouterModels(): string[] {
   const primary = process.env.OPENROUTER_MODEL?.trim() || DEFAULT_OPENROUTER_MODEL;
