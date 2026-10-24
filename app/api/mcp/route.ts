@@ -19,8 +19,10 @@ import {
 } from "@/lib/mcp/auth";
 import { handleMcpHttpRequest } from "@/lib/mcp/http-transport";
 import {
+  extractBillableToolCall,
   mcpBodyRequiresPayment,
   REVEL_BILLABLE_MCP_TOOLS,
+  validateBillableToolArguments,
 } from "@/lib/mcp/payment-gate";
 
 export const runtime = "nodejs";
@@ -135,6 +137,41 @@ export async function POST(request: NextRequest) {
   if (isOkxBillingEnabled()) {
     if (!mcpBodyRequiresPayment(bodyText)) {
       return mcpPostHandler(requestWithBody, false);
+    }
+
+    // OKX review finding: a buyer was charged, then only afterward told the
+    // call's arguments were missing or invalid — the tool handler's own Zod
+    // validation ran after withX402 had already settled payment. Validate a
+    // billable tools/call's arguments here, before any 402 challenge is
+    // issued, using the same rules the handler enforces
+    // (validateBillableToolArguments mirrors create-server.ts's schemas and
+    // calls the same normalizeUrlSafe). An invalid call gets the identical
+    // MCP JSON-RPC error shape the SDK itself returns for a free call
+    // (HTTP 200, result.isError: true) — free, because nothing billable
+    // could have succeeded anyway.
+    const billableCall = extractBillableToolCall(bodyText);
+    if (billableCall) {
+      const validation = await validateBillableToolArguments(
+        billableCall.toolName,
+        billableCall.args
+      );
+      if (!validation.ok) {
+        return applyCors(
+          NextResponse.json({
+            jsonrpc: "2.0",
+            id: billableCall.id ?? null,
+            result: {
+              content: [
+                {
+                  type: "text",
+                  text: `MCP error -32602: Invalid arguments for tool ${billableCall.toolName}: ${validation.error}`,
+                },
+              ],
+              isError: true,
+            },
+          })
+        );
+      }
     }
 
     // Readiness is checked without throwing: a rejected-credential facilitator

@@ -128,6 +128,38 @@ export async function POST(request: NextRequest) {
   // PAYMENT-REQUIRED (fails OKX marketplace x402 standard validation).
   const bodyText = await request.text();
 
+  // OKX review finding: a buyer was charged, then only afterward told `url`
+  // was missing or invalid — auditHandler's own check ran after withX402
+  // had already settled payment. Run the identical validation here, before
+  // any 402 challenge is issued, so a malformed request never reaches the
+  // paywall at all.
+  let precheckBody: { url?: unknown };
+  try {
+    precheckBody = JSON.parse(bodyText || "{}");
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid JSON body" },
+      { status: 400, headers: corsHeaders }
+    );
+  }
+  const precheckUrl =
+    typeof precheckBody.url === "string" ? precheckBody.url.trim() : "";
+  if (!precheckUrl) {
+    return NextResponse.json(
+      { error: "url is required" },
+      { status: 400, headers: corsHeaders }
+    );
+  }
+  try {
+    await normalizeUrlSafe(precheckUrl);
+  } catch (error) {
+    const { toClientErrorMessage } = await import("@/lib/safe-client-error");
+    return NextResponse.json(
+      { error: toClientErrorMessage(error, "Invalid url") },
+      { status: 400, headers: corsHeaders }
+    );
+  }
+
   try {
     const paidRequest = asX402ApiClientRequest(request, bodyText);
 

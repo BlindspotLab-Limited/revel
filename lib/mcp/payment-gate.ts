@@ -1,3 +1,6 @@
+import { z } from "zod";
+import { normalizeUrlSafe } from "@/lib/validation";
+
 export const REVEL_BILLABLE_MCP_TOOLS = [
   "revel_analyze_website",
   "revel_analyze_website_and_wait",
@@ -97,4 +100,85 @@ export function mcpBodyRequiresPayment(bodyText: string): boolean {
 
 export function isBillableMcpTool(toolName: string): boolean {
   return BILLABLE_TOOL_SET.has(toolName);
+}
+
+/**
+ * Pulls {id, toolName, args} out of a single (non-batch) JSON-RPC
+ * `tools/call` for a billable tool, so the caller can validate arguments
+ * before deciding whether to charge. Returns null for anything else —
+ * batches, free methods, non-billable tools, malformed bodies — which all
+ * fall through to the existing mcpBodyRequiresPayment flow unchanged.
+ */
+export function extractBillableToolCall(
+  bodyText: string
+): { id: unknown; toolName: RevelBillableMcpTool; args: unknown } | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bodyText.trim()) as unknown;
+  } catch {
+    return null;
+  }
+
+  if (!isRecord(parsed) || parsed.method !== "tools/call") {
+    return null;
+  }
+
+  const params = isRecord(parsed.params) ? parsed.params : undefined;
+  const toolName = typeof params?.name === "string" ? params.name : undefined;
+
+  if (!toolName || !BILLABLE_TOOL_SET.has(toolName)) {
+    return null;
+  }
+
+  return {
+    id: parsed.id,
+    toolName: toolName as RevelBillableMcpTool,
+    args: params?.arguments,
+  };
+}
+
+/**
+ * Same required/format rules as the Zod schemas registered for these tools
+ * in lib/mcp/create-server.ts, run here so a request with a missing or
+ * malformed url can be rejected before the x402 challenge is issued — not
+ * after the buyer has already signed and paid for it.
+ *
+ * Reuses normalizeUrlSafe (format + SSRF check), the exact function the
+ * real tool handler calls, so nothing validated here can still fail there.
+ */
+const analyzeArgsSchema = z.object({ url: z.string().min(1) });
+const analyzeAndWaitArgsSchema = z.object({
+  url: z.string().min(1),
+  timeoutSeconds: z.number().int().min(60).max(300).optional(),
+});
+
+export async function validateBillableToolArguments(
+  toolName: RevelBillableMcpTool,
+  args: unknown
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const schema =
+    toolName === "revel_analyze_website_and_wait"
+      ? analyzeAndWaitArgsSchema
+      : analyzeArgsSchema;
+
+  const parsed = schema.safeParse(args);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues
+        .map((issue) => `${issue.path.join(".") || "arguments"}: ${issue.message}`)
+        .join("; "),
+    };
+  }
+
+  try {
+    await normalizeUrlSafe(parsed.data.url);
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Invalid url",
+    };
+  }
+
+  return { ok: true };
 }
