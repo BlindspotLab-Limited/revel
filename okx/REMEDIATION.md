@@ -401,3 +401,110 @@ onchainos agent get-my-agents --role asp   # expect approvalLabel: "Listing unde
 matching this record. Watch for the next reviewer decision; if rejected again, capture
 the verbatim OKX text immediately — do not let it go unrecorded as happened the first
 time.
+
+---
+
+## 6. Resubmission #3 (2026-10-24) — successful, endpoint behavior fix
+
+**Result: accepted. `approvalLabel` changed from "Listing rejected" back to
+"Listing under review".** Verified via `onchainos agent get-my-agents` after
+submission, not trusted from `agent activate`'s own output alone — its
+response is ambiguous (see below) in exactly the same way section 5 found.
+
+### OKX's rejection, verbatim
+
+> **No.1** — 您的服务【Website Growth Audit】在买家完成付款签名并扣款后才提示参数缺失或错误，请注意参数校验应在付款前完成。请在返回
+> x402 付费待签信息（challenge）之前完成参数校验，并在修改后重新提交。
+
+Translation: the service only reported missing/invalid parameters *after*
+the buyer had signed and been charged. Parameter validation must complete
+**before** the x402 payment challenge is returned.
+
+### Root cause, confirmed by reading the code, not guessed
+
+Both paid routes charged first and validated second:
+
+- **`/api/mcp`** — `mcpBodyRequiresPayment()` (`lib/mcp/payment-gate.ts`)
+  decided whether to issue a 402 purely from the tool **name**; it never
+  looked at `arguments`. A `tools/call` for `revel_analyze_website` with a
+  missing or malformed `url` still received a 402 challenge. Only after
+  `withX402` had verified and settled payment did the MCP SDK's own Zod
+  validation (`lib/mcp/create-server.ts`) run and reject it — the buyer had
+  already paid for a call that could never succeed.
+- **`/api/audit`** — worse: `POST` wrapped **every** request in `withX402`
+  unconditionally, with no validation beforehand at all.
+  `auditHandler`'s `"url is required"` check only ran after payment had
+  already been taken.
+
+### Fix
+
+`lib/mcp/payment-gate.ts` gained two functions:
+
+- `extractBillableToolCall(bodyText)` — pulls `{id, toolName, args}` out of
+  a single (non-batch) billable `tools/call`; `null` for anything else
+  (batches, free methods, non-billable tools), which keeps flowing through
+  the existing `mcpBodyRequiresPayment` logic unchanged.
+- `validateBillableToolArguments(toolName, args)` — the same required/format
+  rules the real tool handler enforces (`url` required;
+  `revel_analyze_website_and_wait`'s `timeoutSeconds` bounds), calling the
+  identical `normalizeUrlSafe()` the handler calls. Nothing validated here
+  can still fail there.
+
+`app/api/mcp/route.ts` runs this check before the facilitator readiness
+probe and before `withX402` is ever reached. An invalid call gets the exact
+MCP JSON-RPC error shape the SDK itself returns for a free call — HTTP 200,
+`result.isError: true` — free, since nothing billable could have succeeded
+anyway. No 402 is issued.
+
+`app/api/audit/route.ts` runs the same `url` presence + `normalizeUrlSafe`
+check before `withX402`, returning the same 400 body `auditHandler` already
+used — just moved before payment instead of after.
+
+Batch JSON-RPC requests are intentionally out of scope for this pre-check
+(not the documented single-call usage pattern); they continue through the
+existing payment logic unchanged.
+
+### Verified live against production, not just locally
+
+```
+1. tools/call revel_analyze_website, missing url   → 200, isError:true, NO 402
+2. tools/call revel_analyze_website, empty url      → 200, isError:true, NO 402
+3. tools/call revel_analyze_website, malformed url  → 200, isError:true, NO 402
+4. tools/call revel_analyze_website, VALID url      → 402  (paid flow intact)
+5. POST /api/audit, missing url                     → 400, NO 402
+```
+
+Case 4 matters as much as 1–3: it confirms the fix did not also break
+payment for a legitimate request.
+
+### Resubmission
+
+No listing content changed this round — OKX's complaint was about live
+endpoint behavior, not the description/parameters/examples fixed in
+section 5. Deployed the fix, then:
+
+```bash
+onchainos agent activate --agent-id 4750 --preferred-language en-US
+```
+
+First attempt failed on an unrelated local issue:
+
+```
+{"ok":false,"error":"A2A communication is not ready... Run: okx-a2a doctor --fix"}
+```
+
+Fixed by running the CLI's own suggested command, `okx-a2a doctor --fix`
+(started the local A2A daemon; no code or listing changes). Retried
+`agent activate` — succeeded.
+
+As in section 5, `agent activate`'s own JSON response is misleading: its
+`activate` field echoes a **stale** pre-call snapshot (old `rejectReason`,
+`success:false`), while the real outcome is in `submitApproval`
+(`success:true`). **Always confirm with a fresh `agent get-my-agents`
+call afterward** rather than trusting `activate`'s response.
+
+### Status: under review (again)
+
+If rejected a third time, add section 7 here with the verbatim text
+immediately, the same way this section and section 5 did — do not let it
+go unrecorded.
