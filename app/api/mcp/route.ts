@@ -11,6 +11,7 @@ import {
 import {
   applyX402Cors,
   asX402ApiClientRequest,
+  withholdSettlementOnMcpError,
 } from "@/lib/billing/x402-response";
 import {
   isMcpHttpEnabled,
@@ -20,6 +21,7 @@ import {
 import { handleMcpHttpRequest } from "@/lib/mcp/http-transport";
 import {
   extractBillableToolCall,
+  isPaymentProbeBody,
   mcpBodyRequiresPayment,
   REVEL_BILLABLE_MCP_TOOLS,
   validateBillableToolArguments,
@@ -62,12 +64,13 @@ async function mcpPostHandler(
   request: NextRequest,
   paid: boolean
 ): Promise<NextResponse> {
-  return applyCors(
-    await handleMcpHttpRequest(request, {
-      source: "mcp_okx",
-      paid,
-    })
-  );
+  const response = await handleMcpHttpRequest(request, {
+    source: "mcp_okx",
+    paid,
+  });
+  // Paid only: an MCP error comes back as HTTP 200, which withX402 would
+  // settle. Re-issue it as 422 so the buyer is never charged for a failure.
+  return applyCors(paid ? await withholdSettlementOnMcpError(response) : response);
 }
 
 export async function OPTIONS() {
@@ -172,6 +175,34 @@ export async function POST(request: NextRequest) {
           })
         );
       }
+    } else if (!isPaymentProbeBody(bodyText)) {
+      // Treated as paid by mcpBodyRequiresPayment, but not a single
+      // well-formed billable tools/call: a batch, a tools/call with no tool
+      // name, non-JSON, or a message with no method. None of these can
+      // succeed after payment, so none receives a 402 challenge. Only the
+      // bare discovery probe (empty body or `{}`) still does.
+      let parses = true;
+      try {
+        JSON.parse(bodyText);
+      } catch {
+        parses = false;
+      }
+      return applyCors(
+        NextResponse.json(
+          {
+            jsonrpc: "2.0",
+            id: null,
+            error: parses
+              ? {
+                  code: -32600,
+                  message:
+                    "Invalid Request: a paid call must be one JSON-RPC tools/call for revel_analyze_website or revel_analyze_website_and_wait, with arguments.url. Batches are not supported for paid tools.",
+                }
+              : { code: -32700, message: "Parse error: body is not valid JSON" },
+          },
+          { status: 400 }
+        )
+      );
     }
 
     // Readiness is checked without throwing: a rejected-credential facilitator

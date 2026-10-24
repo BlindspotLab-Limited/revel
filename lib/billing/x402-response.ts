@@ -10,16 +10,26 @@ import { NextRequest, NextResponse } from "next/server";
  * @okxweb3/app-x402-next treats Accept:text/html + Mozilla UA as a browser and
  * returns HTML *without* PAYMENT-REQUIRED — even with paywallConfig undefined.
  * Force API client headers before withX402 so challenges stay standard.
+ *
+ * The forced Accept MUST also list text/event-stream. withX402 hands this
+ * same request to the route handler once a payment is verified, and the MCP
+ * Streamable HTTP transport rejects any POST whose Accept lacks either
+ * application/json or text/event-stream with HTTP 406 (SDK 1.29,
+ * webStandardStreamableHttp.js). Forcing "application/json" alone made every
+ * paid /api/mcp call fail with 406 *after* the buyer had signed — the
+ * failure behind OKX's 2026-10-24 rejection. Browser detection only looks
+ * for text/html, so this value still yields a standard JSON challenge.
  */
+export const X402_API_CLIENT_ACCEPT = "application/json, text/event-stream";
+
 export function asX402ApiClientRequest(
   request: NextRequest,
   bodyText?: string
 ): NextRequest {
   const headers = new Headers(request.headers);
   // isWebBrowser = accept.includes("text/html") && ua.includes("Mozilla")
-  headers.set("Accept", "application/json");
   headers.delete("accept");
-  headers.set("Accept", "application/json");
+  headers.set("Accept", X402_API_CLIENT_ACCEPT);
   const ua = headers.get("user-agent") ?? headers.get("User-Agent") ?? "";
   if (/Mozilla/i.test(ua)) {
     headers.set("User-Agent", "Revel-A2MCP-x402-client/1.0");
@@ -103,4 +113,52 @@ export function applyX402Cors(
     next.headers.set(key, value);
   }
   return next;
+}
+
+/**
+ * Paid MCP calls must never be charged for a failure.
+ *
+ * withX402 settles (moves the buyer's funds) only when the handler's response
+ * status is below 400. The MCP SDK reports tool failures — a thrown handler,
+ * an argument the tool rejects — as HTTP 200 with `result.isError: true`, and
+ * protocol errors as a JSON-RPC `error` object. Left as 200, either would be
+ * settled: the buyer pays for an error.
+ *
+ * For paid calls only, re-issue any such JSON-RPC response with HTTP 422 so
+ * settlement is skipped. The body is untouched, so the caller still gets the
+ * full error. Successful results, non-JSON bodies and responses already >= 400
+ * pass through unchanged.
+ */
+export async function withholdSettlementOnMcpError(
+  response: Response
+): Promise<Response> {
+  if (response.status >= 400) return response;
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) return response;
+
+  let text: string;
+  try {
+    text = await response.clone().text();
+  } catch {
+    return response;
+  }
+
+  let failed = false;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    const messages = Array.isArray(parsed) ? parsed : [parsed];
+    failed = messages.some((message) => {
+      if (typeof message !== "object" || message === null) return false;
+      const record = message as {
+        error?: unknown;
+        result?: { isError?: unknown };
+      };
+      return record.error !== undefined || record.result?.isError === true;
+    });
+  } catch {
+    return response;
+  }
+
+  if (!failed) return response;
+  return new Response(text, { status: 422, headers: new Headers(response.headers) });
 }

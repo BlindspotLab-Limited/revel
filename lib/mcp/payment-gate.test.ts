@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   extractBillableToolCall,
   isBillableMcpTool,
+  isPaymentProbeBody,
   mcpBodyRequiresPayment,
   validateBillableToolArguments,
 } from "@/lib/mcp/payment-gate";
@@ -154,6 +155,18 @@ async function main() {
     { url: "https://example.com", timeoutSeconds: 120 }
   );
   assert.equal(validWithTimeout.ok, true);
+
+  // isPaymentProbeBody: only empty / `{}` remain 402 discovery probes.
+  assert.equal(isPaymentProbeBody(""), true);
+  assert.equal(isPaymentProbeBody("   "), true);
+  assert.equal(isPaymentProbeBody("{}"), true);
+  assert.equal(isPaymentProbeBody("not json"), false);
+  assert.equal(isPaymentProbeBody("[]"), false);
+  assert.equal(isPaymentProbeBody('{"hello":"world"}'), false);
+  assert.equal(
+    isPaymentProbeBody(rpc("tools/call", { name: "revel_analyze_website" })),
+    false
+  );
 
   console.log("payment-gate tests passed");
 }

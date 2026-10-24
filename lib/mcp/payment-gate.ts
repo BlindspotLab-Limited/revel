@@ -103,6 +103,27 @@ export function isBillableMcpTool(toolName: string): boolean {
 }
 
 /**
+ * A body that is only a 402 discovery probe: empty, or the empty object `{}`.
+ * These carry no tool call, and keep receiving a 402 challenge so the
+ * marketplace's `curl -i -X POST <endpoint>` x402 self-check still passes.
+ *
+ * Every other body that mcpBodyRequiresPayment() treats as paid but that is
+ * not a single, well-formed billable tools/call (a batch, a tools/call with
+ * no tool name, non-JSON, a message with no method) can never succeed after
+ * payment, so the route rejects it free, before any challenge.
+ */
+export function isPaymentProbeBody(bodyText: string): boolean {
+  const trimmed = bodyText.trim();
+  if (!trimmed) return true;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return isRecord(parsed) && Object.keys(parsed).length === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Pulls {id, toolName, args} out of a single (non-batch) JSON-RPC
  * `tools/call` for a billable tool, so the caller can validate arguments
  * before deciding whether to charge. Returns null for anything else —
