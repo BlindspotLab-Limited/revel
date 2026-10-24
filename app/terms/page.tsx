@@ -27,7 +27,7 @@ export default function TermsPage() {
       <Navbar />
       <main className="mx-auto max-w-2xl px-6 py-32">
         <h1 className="font-heading text-4xl font-semibold">Terms of Service</h1>
-        <p className="mt-4 text-muted">Last updated: July 10, 2026</p>
+        <p className="mt-4 text-muted">Last updated: October 24, 2026</p>
 
         <div className="mt-12 space-y-8 text-muted">
           <section>

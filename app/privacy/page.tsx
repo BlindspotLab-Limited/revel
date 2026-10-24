@@ -29,7 +29,7 @@ export default function PrivacyPage() {
       <Navbar />
       <main className="mx-auto max-w-2xl px-6 py-32">
         <h1 className="font-heading text-4xl font-semibold">Privacy Policy</h1>
-        <p className="mt-4 text-muted">Last updated: July 10, 2026</p>
+        <p className="mt-4 text-muted">Last updated: October 24, 2026</p>
 
         <div className="prose-revel mt-12 space-y-8 text-muted">
           <section>
@@ -189,11 +189,11 @@ export default function PrivacyPage() {
             <ul className="mt-3 list-disc space-y-2 pl-5 leading-relaxed">
               <li>Google OAuth &amp; NextAuth (authentication)</li>
               <li>Supabase / PostgreSQL (data storage)</li>
-              <li>Groq, Google Gemini, and OpenRouter (AI analysis)</li>
+              <li>OpenRouter (AI analysis)</li>
               <li>Linear, Notion, and GitHub (optional export destinations you connect)</li>
               <li>OKX Onchain OS / x402 (agent marketplace payments)</li>
               <li>Resend (transactional email)</li>
-              <li>Vercel (hosting)</li>
+              <li>Cloudflare Workers (hosting)</li>
               <li>Plausible (optional, privacy-friendly analytics)</li>
             </ul>
             <p className="mt-3 leading-relaxed">
