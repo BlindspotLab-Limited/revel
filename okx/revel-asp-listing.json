@@ -2,7 +2,7 @@
   "role": "asp",
   "name": "Revel",
   "description": "Revel audits a public website's product positioning, messaging and conversion copy, then returns a Reveal Index score (0-100), a Blindspot Map of findings, a prioritised Blueprint and an Action Queue. Every finding quotes the page text supporting it, and quotes are verified against the pages actually fetched. Analysis is text-only from server-rendered HTML: no page is rendered, so no claim is made about layout, contrast, mobile, performance or technical SEO. A BlindspotLab Limited product.",
-  "picture": "https://static.okx.com/cdn/web3/wallet/marketplace/headimages/agent/avatar/4c459d5a-4d09-47b6-a347-41389172bdaa.png",
+  "picture": "https://static.okx.com/cdn/web3/wallet/marketplace/headimages/agent/avatar/bc64a63b-f787-4f7e-a4e8-db8e78f3b37c.jpg",
   "_notes": {
     "descriptionLimit": "OKX marketplace rule D8: agent description must be 500 characters or fewer.",
     "serviceFile": "okx/revel-asp-service.json",
