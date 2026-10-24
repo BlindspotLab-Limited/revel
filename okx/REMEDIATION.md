@@ -508,3 +508,70 @@ call afterward** rather than trusting `activate`'s response.
 If rejected a third time, add section 7 here with the verbatim text
 immediately, the same way this section and section 5 did — do not let it
 go unrecorded.
+
+---
+
+## 7. Resubmission #4 (2026-10-24) — the real post-payment failure
+
+**Section 6's fix was necessary but not sufficient.** OKX rejected again
+with the identical text. The rejection was timestamped 14:36:36Z, about one
+minute after activation, which points to an automated paid test call rather
+than a human review.
+
+### Root cause
+
+`asX402ApiClientRequest()` (`lib/billing/x402-response.ts`) forced
+`Accept: application/json` so the x402 SDK would not serve an HTML paywall.
+After verifying a payment, `withX402` hands **that same request** to the
+route handler. The MCP Streamable HTTP transport (SDK 1.29,
+`webStandardStreamableHttp.js:378`) rejects any POST whose Accept lacks
+`text/event-stream` with **HTTP 406**. So **every** paid `/api/mcp` call
+failed after the buyer signed, whatever its arguments. A valid paid request
+could never succeed.
+
+Confirmed live, with no payment: `tools/list` sent with
+`Accept: application/json` returns 406 on production.
+
+Why nothing caught it: `x402-paywall.test.ts` only exercised the **unpaid**
+402 challenge. No test looked at what the handler receives after payment.
+
+### Fix (cf3370f)
+
+1. Force `Accept: application/json, text/event-stream`. The x402 SDK's
+   browser check is `accept.includes("text/html") && ua.includes("Mozilla")`,
+   so the challenge stays standard JSON.
+2. `withholdSettlementOnMcpError()`: `withX402` settles whenever the handler
+   returns < 400. The MCP SDK reports tool failures as HTTP 200 with
+   `result.isError: true`, so the buyer would be charged for an error. For
+   paid calls only, such responses are re-issued as **422** with the body
+   unchanged, so settlement is skipped.
+3. A body that counts as paid but cannot succeed (batch, `tools/call`
+   without a tool name, non-JSON, no method) gets a free **400** before any
+   challenge. Only the bare discovery probe (empty body or `{}`) keeps its
+   402, for the marketplace x402 self-check.
+
+New `lib/billing/x402-paid-replay.test.ts` feeds the MCP SDK the exact
+request `withX402` passes after payment. It expects 200, with a control
+case showing `application/json` alone still gets 406. It also covers
+settlement withholding and every no-402 case. The facilitator is mocked;
+nothing is verified or settled.
+
+### Verified live after deploy (version ef0f6d21)
+
+```
+valid url                    → 402 + PAYMENT-REQUIRED
+missing url / malformed url  → 200 isError, no 402
+batch / no tool name / non-JSON → 400, no 402
+{} and empty body probes     → 402 + PAYMENT-REQUIRED
+okxBilling.status            → healthy
+```
+
+**Not verified live:** the post-payment replay itself. That needs a real
+on-chain payment, which was deliberately not made. It is covered by the
+test above, which exercises the identical SDK code path.
+
+### Status
+
+Resubmitted 14:52Z. Confirmed "Listing under review" with
+`agent get-my-agents`, and still under review after 7+ minutes of polling.
+The previous attempt was auto-rejected within about a minute.
