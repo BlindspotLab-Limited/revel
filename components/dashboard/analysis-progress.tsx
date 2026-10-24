@@ -62,7 +62,20 @@ export function AnalysisProgress({ analysisId }: AnalysisProgressProps) {
         const res = await fetch(`/api/report/${analysisId}`);
         const data = await res.json();
 
-        if (data.status === "completed" && data.report) {
+        // A partial report (fewer pages than target, or some fetch
+        // failures) is still a real, deliverable result — saveAnalysis()
+        // always persists a report alongside status "partial"
+        // (services/analysis-runner.ts). The report page renders
+        // coverage/limitations from the report data itself, not from this
+        // status, so a partial result needs no special handling here:
+        // redirect exactly as for "completed". Previously there was no
+        // branch for "partial" at all, so it matched none of the three
+        // conditions below and polled forever, silently discarding a
+        // finished, usable report.
+        if (
+          (data.status === "completed" || data.status === "partial") &&
+          data.report
+        ) {
           setCompletedStages(stages.length);
           setStatus("completed");
           clearInterval(elapsedInterval);
@@ -71,7 +84,10 @@ export function AnalysisProgress({ analysisId }: AnalysisProgressProps) {
           setTimeout(() => {
             router.push(`/mission-control/report/${analysisId}`);
           }, 600);
-        } else if (data.status === "completed" && !data.report) {
+        } else if (
+          (data.status === "completed" || data.status === "partial") &&
+          !data.report
+        ) {
           setStatus("failed");
           setFailureReason(
             "Analysis finished but the report could not be loaded. Please try again."
