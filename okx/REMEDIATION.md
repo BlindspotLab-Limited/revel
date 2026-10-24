@@ -243,3 +243,161 @@ endpoint would find the paid path unavailable.
    `curl -i -X POST /api/mcp -d '{}'` → **402 + PAYMENT-REQUIRED**.
 5. Run `npm run okx:validate` once more against the final text.
 6. Submit with `npm run okx:submit -- --confirm`.
+
+---
+
+## 5. Resubmission #2 (2026-10-24) — successful, via `agent update` not `agent create`
+
+**Result: accepted. `approvalLabel` changed from "Listing rejected" to "Listing under
+review".** Verified with `onchainos agent get-my-agents --role asp` after submission,
+not inferred from command exit codes alone.
+
+### What actually blocked this attempt, in order
+
+**5.1 — `agent create` is the wrong command for Revel, permanently.**
+
+Revel already has a registered OKX identity: `agentId 4750`, created by the first
+submission that led to section 1's rejection. `npm run okx:submit` (which calls
+`onchainos agent create`) will never succeed for Revel again — it is for registering a
+**new** identity. Every attempt returned:
+
+```
+{"ok":false,"error":"Wallet API error (code=81001): OnchainOS update required before
+service registration.\nPlease update and verify the OnchainOS CLI, beta skills by
+running:\n   `npx -y @okxweb3/onchainos-installer remove`\n   `npx -y
+@okxweb3/onchainos-installer install --beta`\n..."}
+```
+
+This message is **misleading**. It reads as a stale local tooling problem, and the CLI
+genuinely was outdated (fixed below), but updating it changed nothing — `create` kept
+failing with the identical message afterward. The real cause was only found by running
+the read-only `onchainos agent gate-check --role asp`, which surfaced the existing
+`agentId: 4750` with `approvalLabel: "Listing rejected"`. **The fix is `agent update
+--agent-id 4750`, followed by `agent activate --agent-id 4750 --preferred-language
+<bcp-47>`.** `create` cannot be made to work here; do not retry it.
+
+**5.2 — The committed avatar URL was stale.**
+
+`okx/revel-asp-listing.json`'s `picture` pointed at a CDN URL from a prior session's
+upload. Resubmitting it returned:
+
+```
+{"ok":false,"error":"Wallet API error (code=81001): profilePicture is not a valid
+uploaded avatar"}
+```
+
+Fix: re-upload with `onchainos agent upload --file <local 440x440 square jpg/png>`
+(requirements documented in `scripts/make-okx-avatar-square.mjs`) and use the URL it
+returns. Uploaded `public/brand/revel-avatar-440-okx.jpg` (440×440, verified with
+`sharp` before upload); committed the new URL.
+
+**5.3 — The official `--beta` installer script has a genuine bug: it cannot parse
+under Windows PowerShell 5.1.**
+
+`npx -y @okxweb3/onchainos-installer install --beta` failed with PowerShell parse
+errors (`MissingEndCurlyBrace`) at `install.ps1:322`, reproducible on a clean npm
+cache, on **both** `install --beta` and `install` (stable channel — same script).
+
+Root cause confirmed by parsing the exact cached `install.ps1` under both engines with
+`[System.Management.Automation.Language.Parser]::ParseFile`:
+
+| Engine | Parse errors |
+|---|---|
+| Windows PowerShell 5.1 (`powershell.exe`, what `onchainos-installer` shells out to) | Multiple |
+| PowerShell 7 (`pwsh.exe`) | **0** |
+
+The script is valid PowerShell; Windows PowerShell 5.1's parser cannot handle whatever
+construct it uses. `onchainos-installer`'s JS wrapper always invokes `powershell.exe`
+on win32 (`lib/bin/onchainos-installer.js`, `buildCommands()`), never `pwsh.exe`, so
+this fails on any Windows machine where `pwsh` (PowerShell 7+) is not the `powershell`
+on PATH — which is most machines, since `pwsh` ships separately from Windows.
+
+**Workaround**, since `npx -y @okxweb3/onchainos-installer remove` had already deleted
+the local `onchainos.exe` by the time this was hit:
+
+```bash
+# 1. Remove (works — pure Node/npx, no PowerShell involved)
+npx -y @okxweb3/onchainos-installer remove
+
+# 2. Run the installer script directly under PowerShell 7 instead of through
+#    the broken JS-wrapper -> powershell.exe 5.1 path. Find the exact cached
+#    script path from the failed `install --beta` output first.
+pwsh -NoProfile -File "<path to install.ps1 from the npx cache>" -beta
+
+# 3. The JS wrapper also runs a separate "Skills" install step
+#    (pure npx, unaffected by the PS1 bug) that the above does not reach.
+#    Run it directly:
+npx skills add "okx/onchainos-skills#beta" --yes -g
+```
+
+Confirmed after: `onchainos --version` → `4.9.3-beta`; `wallet status` session
+survived the reinstall.
+
+**5.4 — `agent update`'s A2MCP service schema is four lines, not the two-part
+structure `scripts/validate-revel-listing.mjs` checks.**
+
+`onchainos agent update --help` documents, for `serviceType: "A2MCP"`:
+
+> line 1 = what the service does · line 2 = ALL parameters on one line, each
+> `<name>(<type>, required/optional): <meaning>` · line 3 = request method or MCP tool
+> name · line 4 = a working curl example using the real endpoint URL — "an A2MCP
+> listing missing any is rejected at listing QA"
+
+This is **not** the two-part (capability summary / what-user-must-provide) structure
+rule D1 describes, which `scripts/validate-revel-listing.mjs` / `onchainos agent
+validate-listing` enforces for `agent create`. **There is no local validator for the
+`agent update` schema** — QA for `update` runs server-side only (`agent activate`'s
+own help text: *"QA runs at register/update, not here"*). A second rejection here would
+have been invisible to local tooling.
+
+The four-line description actually submitted (service id `31680`, name "Website Growth
+Audit" — the name already on the registered service; left unchanged since it was not
+part of the rejection reason):
+
+```
+Audits a public website's product positioning, messaging and conversion copy,
+returning a Reveal Index score (0-100), a Blindspot Map of findings, a prioritised
+Blueprint and an Action Queue.
+url(string, required): absolute public http(s) URL to audit; timeoutSeconds(number,
+optional): max seconds to wait, default 180, max 300; format(string, optional):
+export format, markdown or json
+MCP tool revel_analyze_website (via tools/call); poll revel_get_analysis until status
+is completed or partial
+curl -X POST https://tryrevel.xyz/api/mcp -H "Content-Type: application/json" -d
+'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"revel_analyze_website","arguments":{"url":"https://example.com"}}}'
+```
+
+Line 4's example call is accurate but, called literally without an `X-PAYMENT` header,
+returns 402 per the x402 protocol — expected behaviour for a paid tool, not a defect.
+The JSON-RPC shape was taken from `lib/billing/x402-paywall.test.ts:99`, not invented,
+and matches what section 2.1 verified working in production.
+
+### Submission commands, for the next person
+
+```bash
+# Read current state first — never assume
+onchainos agent gate-check --role asp
+onchainos agent get-my-agents --role asp
+onchainos agent service-list --agent-id 4750
+
+# Update (name/description/picture optional; omitting a flag leaves it unchanged)
+onchainos agent update --agent-id 4750 \
+  --name "Revel" \
+  --description "<agent-level description, from okx/revel-asp-listing.json>" \
+  --picture "<CDN URL from `agent upload`>" \
+  --service '[{"operation":"update","id":"31680","serviceName":"Website Growth Audit","serviceType":"A2MCP","fee":"0.35","endpoint":"https://tryrevel.xyz/api/mcp","serviceDescription":"<4 lines, \n-separated>"}]'
+
+# Submit for review
+onchainos agent activate --agent-id 4750 --preferred-language en-US
+
+# Verify — do not trust the activate response alone; it returned a stale
+# cached rejectReason alongside a genuine success in this run
+onchainos agent get-my-agents --role asp   # expect approvalLabel: "Listing under review"
+```
+
+### Status: under review
+
+`okx/revel-asp-service.json` now holds the four-line content actually submitted,
+matching this record. Watch for the next reviewer decision; if rejected again, capture
+the verbatim OKX text immediately — do not let it go unrecorded as happened the first
+time.

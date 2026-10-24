@@ -7,6 +7,7 @@
     "descriptionLimit": "OKX marketplace rule D8: agent description must be 500 characters or fewer.",
     "serviceFile": "okx/revel-asp-service.json",
     "validate": "node scripts/validate-revel-listing.mjs",
-    "submit": "node scripts/create-revel-asp.mjs"
+    "submit": "node scripts/create-revel-asp.mjs",
+    "important": "Revel already has a registered OKX identity (agentId 4750). scripts/create-revel-asp.mjs (agent create) no longer applies — a second create attempt fails with a misleading \"OnchainOS update required\" error. Any future listing change must go through agent update --agent-id 4750, then agent activate. See okx/REMEDIATION.md, section 5, for the full procedure."
   }
 }
